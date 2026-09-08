@@ -419,12 +419,19 @@
 		flex-direction: column;
 		align-items: center;
 		gap: 12px;
+		height: 100%;
+		width: 100%;
 	}
 
 	.icon-preview {
 		position: relative;
-		width: 128px;
-		height: 128px;
+		/* Fills whatever square its container was given. The shape is decided by
+		   the container so it can line up with its neighbours; this just fills it,
+		   borders included. */
+		height: 100%;
+		width: 100%;
+		min-height: 128px;
+		box-sizing: border-box;
 		border: 2px solid var(--border-color, #2a2f47);
 		border-radius: 8px;
 		background: var(--mc-panel-darkest, #0d1117);
@@ -435,8 +442,13 @@
 	}
 
 	.icon-preview img {
-		width: 100%;
-		height: 100%;
+		/* Held at an exact 2x of the 64px source. Filling the tile instead would
+		   scale by some fraction, and `pixelated` at a non-integer factor gives
+		   pixels of uneven width — visibly wrong on pixel-art icons. */
+		width: 128px;
+		height: 128px;
+		max-width: 100%;
+		max-height: 100%;
 		object-fit: contain;
 		image-rendering: pixelated;
 		image-rendering: -moz-crisp-edges;

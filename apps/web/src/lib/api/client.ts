@@ -23,8 +23,14 @@ async function apiFetch<T>(fetcher: Fetcher, path: string, init?: RequestInit): 
 			const errorMsg = errorData.error || `Request failed with ${res.status}`;
 			return { data: null, error: errorMsg };
 		}
-		const data = (await res.json()) as T;
-		return { data, error: null };
+		// A 204, or any empty body, is a success with nothing to parse. Calling
+		// res.json() on it throws "Unexpected end of JSON input", which surfaces
+		// to the operator as a failure on a request that actually worked.
+		const text = await res.text();
+		if (!text) {
+			return { data: null, error: null };
+		}
+		return { data: JSON.parse(text) as T, error: null };
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return { data: null, error: message };
@@ -163,11 +169,10 @@ export async function setDisplayName(
 	name: string,
 	displayName: string | null
 ): Promise<ApiResult<void>> {
-	return apiFetch(fetcher, `/api/servers/${name}/display-name`, {
-		method: 'PUT',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ displayName })
-	});
+	// apiPut, not apiFetch: the endpoint answers 204 with no body, and apiFetch
+	// parses the body unconditionally. Renaming a server therefore succeeded on
+	// the server and then reported "Unexpected end of JSON input" to the operator.
+	return apiPut(fetcher, `/api/servers/${name}/display-name`, { displayName });
 }
 
 export async function deleteServer(fetcher: Fetcher, name: string): Promise<ApiResult<void>> {

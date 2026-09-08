@@ -743,7 +743,9 @@
 	}
 
 	.empty-state p {
-		margin: 0 0 24px;
+		/* auto side margins: the parent centres the text, but without these the
+		   500px box itself stays pinned to the left edge. */
+		margin: 0 auto 24px;
 		color: #9aa2c5;
 		font-size: 14px;
 		max-width: 500px;

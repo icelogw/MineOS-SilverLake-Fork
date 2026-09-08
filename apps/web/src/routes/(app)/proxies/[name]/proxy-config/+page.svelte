@@ -148,6 +148,45 @@
 		serverEntries = [...serverEntries, { name: '', address: '' }];
 	}
 
+	/** Servers that exist but are not already listed as a backend here. */
+	const addableServers = $derived(
+		(data.candidates ?? []).filter(
+			(name: string) => !serverEntries.some((e) => e.name.trim() === name)
+		)
+	);
+
+	let addingExisting = $state(false);
+
+	/**
+	 * Adds an existing server as a backend, filling in its real listen port.
+	 *
+	 * The port is read from that server's own server.properties rather than
+	 * guessed: every server here defaults to 25565 in the UI, but only one of
+	 * them can actually hold that port, so a guessed address would route players
+	 * to the wrong server — or to nothing.
+	 */
+	async function addExistingServer(name: string) {
+		if (!name || addingExisting) return;
+		addingExisting = true;
+		try {
+			let address = '';
+			try {
+				const res = await fetch(`/api/servers/${encodeURIComponent(name)}/server-properties`);
+				if (res.ok) {
+					const props = await res.json();
+					const port = props?.['server-port'];
+					if (port) address = `127.0.0.1:${port}`;
+				}
+			} catch {
+				// Leave the address blank and let the operator fill it in; failing to
+				// read a port is not a reason to refuse to add the backend.
+			}
+			serverEntries = [...serverEntries, { name, address }];
+		} finally {
+			addingExisting = false;
+		}
+	}
+
 	function removeServer(idx: number) {
 		const removedName = serverEntries[idx]?.name.trim();
 		serverEntries = serverEntries.filter((_, i) => i !== idx);
@@ -336,10 +375,33 @@
 		<section class="card">
 			<div class="card-header">
 				<h2>Backend servers</h2>
-				<button class="btn btn-secondary" type="button" onclick={addServer}>+ Add</button>
+				<div class="card-actions">
+					{#if addableServers.length > 0}
+						<!-- Pick a server that already exists rather than retyping its name
+						     and looking up its port by hand. -->
+						<select
+							class="add-existing"
+							disabled={addingExisting}
+							value=""
+							onchange={(e) => {
+								const select = e.currentTarget as HTMLSelectElement;
+								const chosen = select.value;
+								select.value = '';
+								void addExistingServer(chosen);
+							}}
+						>
+							<option value="" disabled>Add existing server…</option>
+							{#each addableServers as candidate}
+								<option value={candidate}>{candidate}</option>
+							{/each}
+						</select>
+					{/if}
+					<button class="btn btn-secondary" type="button" onclick={addServer}>+ Add</button>
+				</div>
 			</div>
 			<p class="card-description">
-				Map a name to a backend Minecraft server's <code>host:port</code>.
+				Map a name to a backend Minecraft server's <code>host:port</code>. Adding an existing
+				server fills in its configured port for you.
 			</p>
 			{#if serverEntries.length === 0}
 				<p class="empty">No backends configured. Velocity won't have anywhere to route players.</p>
@@ -555,6 +617,32 @@
 
 	.card-header h2 {
 		margin: 0;
+	}
+
+	.card-actions {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex-wrap: wrap;
+	}
+
+	.add-existing {
+		background: #0f1118;
+		border: 1px solid #2a2f47;
+		border-radius: 8px;
+		color: #c9d1f2;
+		font: inherit;
+		font-size: 13px;
+		padding: 7px 10px;
+		max-width: 220px;
+	}
+
+	.add-existing:hover:enabled {
+		border-color: rgba(106, 176, 76, 0.4);
+	}
+
+	.add-existing:disabled {
+		opacity: 0.6;
 	}
 
 	.card-description {

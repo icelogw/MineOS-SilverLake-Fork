@@ -5,7 +5,8 @@ import {
 	getBungeeConfig,
 	updateBungeeConfig,
 	getServer,
-	getProxyBackends
+	getProxyBackends,
+	getAllServers
 } from '$lib/api/client';
 import { fail } from '@sveltejs/kit';
 
@@ -50,11 +51,21 @@ export const load: PageServerLoad = async ({ params, fetch }) => {
 	// whole set is visible from the place the backend list is edited.
 	const backends = await getProxyBackends(fetch, params.name);
 
+	// Servers that could be added as a backend, so an operator can pick one that
+	// already exists instead of retyping its name and hunting for its port.
+	// Proxies are excluded (a proxy behind a proxy is not a backend), as is this
+	// server itself.
+	const allServers = await getAllServers(fetch);
+	const candidates = (allServers.data ?? [])
+		.filter((s) => s.serverType !== 'proxy' && s.name !== params.name)
+		.map((s) => s.name);
+
 	return {
 		proxyKind,
 		velocityConfig: proxyKind === 'velocity' ? velocityConfig : null,
 		bungeeConfig: proxyKind === 'bungeecord' ? bungeeConfig : null,
 		backends,
+		candidates,
 		serverName: params.name
 	};
 };

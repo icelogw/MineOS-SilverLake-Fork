@@ -464,13 +464,16 @@
 		border-color: rgba(106, 176, 76, 0.5);
 	}
 
+	/* Wraps instead of overflowing. As a flex row these could not shrink below
+	   their icon+label width, so the fourth action was clipped by the card edge;
+	   auto-fit reflows to as many columns as fit, whatever the action list holds. */
 	.action-options {
-		display: flex;
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
 		gap: 10px;
 	}
 
 	.action-btn {
-		flex: 1;
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -856,7 +859,7 @@
 		}
 
 		.action-options {
-			flex-direction: column;
+			grid-template-columns: 1fr;
 		}
 
 		.schedule-preview {

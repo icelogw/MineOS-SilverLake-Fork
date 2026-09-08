@@ -382,6 +382,42 @@
 				<h2>Server Configuration</h2>
 				<p class="subtitle">Configure server.properties for {data.serverName}</p>
 			</div>
+
+			{#if hasChanges}
+				<!-- Sits on the heading line rather than at the foot of the page, so it
+				     is visible the moment something changes instead of below a long
+				     settings list. It lives outside the <form>, so the submit button
+				     reaches it by id via the `form` attribute. -->
+				<div class="save-bar">
+					<div class="save-summary">
+						<span class="save-summary-top">
+							<span class="save-title">Unsaved changes</span>
+							{#if hasRestartChanges}
+								<span class="restart-badge">Restart required</span>
+							{/if}
+						</span>
+						<span class="save-hint">Most settings apply after a restart</span>
+					</div>
+					<div class="save-actions">
+						<button type="button" class="btn-ghost" onclick={discardChanges} disabled={loading}>
+							Discard
+						</button>
+						<button type="submit" form="config-form" class="btn-primary" disabled={loading}>
+							{loading ? 'Saving...' : 'Save changes'}
+						</button>
+						{#if hasRestartChanges}
+							<button
+								type="button"
+								class="btn-restart"
+								onclick={restartServer}
+								disabled={restartLoading || loading}
+							>
+								{restartLoading ? 'Restarting...' : 'Restart server'}
+							</button>
+						{/if}
+					</div>
+				</div>
+			{/if}
 		</div>
 
 		{#if data.properties.error}
@@ -390,6 +426,7 @@
 			</div>
 		{:else}
 			<form
+				id="config-form"
 				method="POST"
 				use:enhance={() => {
 					loading = true;
@@ -402,6 +439,17 @@
 				}}
 			>
 				<input type="hidden" name="properties" value={JSON.stringify(properties)} />
+
+				<!-- Save/error feedback sits at the top of the form. At the bottom it
+				     sat below a long, scrollable list of settings, so the confirmation
+				     for a save landed off-screen from the control that triggered it. -->
+				{#if form?.error}
+					<div class="message error">{form.error}</div>
+				{/if}
+
+				{#if form?.success}
+					<div class="message success">Configuration saved successfully!</div>
+				{/if}
 
 				<div class="config-toolbar">
 					<div class="search-field">
@@ -418,9 +466,6 @@
 							</button>
 						{/if}
 					</div>
-					{#if hasChanges}
-						<span class="dirty-pill">Unsaved changes</span>
-					{/if}
 				</div>
 
 				<!-- Section Tabs -->
@@ -620,43 +665,6 @@
 					{/if}
 				</div>
 
-				{#if form?.error}
-					<div class="message error">{form.error}</div>
-				{/if}
-
-				{#if form?.success}
-					<div class="message success">Configuration saved successfully!</div>
-				{/if}
-
-				{#if hasChanges}
-					<div class="save-bar">
-						<div class="save-summary">
-							<span class="save-title">Unsaved changes</span>
-							<span class="save-hint">Most settings apply after a restart</span>
-							{#if hasRestartChanges}
-								<span class="restart-badge">Restart required</span>
-							{/if}
-						</div>
-						<div class="save-actions">
-							<button type="button" class="btn-ghost" onclick={discardChanges} disabled={loading}>
-								Discard
-							</button>
-							<button type="submit" class="btn-primary" disabled={loading}>
-								{loading ? 'Saving...' : 'Save changes'}
-							</button>
-							{#if hasRestartChanges}
-								<button
-									type="button"
-									class="btn-restart"
-									onclick={restartServer}
-									disabled={restartLoading || loading}
-								>
-									{restartLoading ? 'Restarting...' : 'Restart server'}
-								</button>
-							{/if}
-						</div>
-					</div>
-				{/if}
 			</form>
 		{/if}
 	</div>
@@ -704,18 +712,25 @@
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
+		gap: 16px;
+		/* The save bar drops onto its own line rather than crushing the heading
+		   when the window is narrow. */
+		flex-wrap: wrap;
+		/* Tall enough for the save bar before it exists, so the row does not grow
+		   the instant you change a setting and nudge the page under the cursor. */
+		min-height: 68px;
 	}
 
 	h2 {
 		margin: 0 0 8px;
-		font-size: 24px;
+		font-size: 28px;
 		font-weight: 600;
 	}
 
 	.subtitle {
 		margin: 0;
 		color: #aab2d3;
-		font-size: 14px;
+		font-size: 15px;
 	}
 
 	.config-toolbar {
@@ -761,17 +776,6 @@
 
 	.btn-clear:hover {
 		background: rgba(88, 101, 242, 0.3);
-	}
-
-	.dirty-pill {
-		background: rgba(255, 179, 71, 0.15);
-		color: #ffc48a;
-		border: 1px solid rgba(255, 179, 71, 0.3);
-		padding: 6px 10px;
-		border-radius: 999px;
-		font-size: 12px;
-		font-weight: 600;
-		white-space: nowrap;
 	}
 
 	.error-box {
@@ -1274,14 +1278,13 @@
 
 	/* Save Bar */
 	.save-bar {
-		position: sticky;
-		bottom: 16px;
+		/* Sized to its contents rather than the full page width, but kept at a
+		   comfortable touch size — the earlier tighter version read as a
+		   secondary control, and Save is the primary action on this page. */
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
-		gap: 16px;
-		padding: 16px 20px;
-		margin-top: 12px;
+		gap: 14px;
+		padding: 12px 16px;
 		background: rgba(20, 24, 39, 0.92);
 		border: 1px solid rgba(88, 101, 242, 0.2);
 		border-radius: 14px;
@@ -1290,11 +1293,23 @@
 		z-index: 10;
 	}
 
+	/* Label above hint rather than in a single long row. Side by side the bar was
+	   ~918px wide, which pushed it onto a second line at common window widths —
+	   and a bar that appears on its own line shoves the whole page down the moment
+	   you change a setting. Stacking keeps it on the heading line, so showing it
+	   costs no layout shift. */
 	.save-summary {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 2px;
+		white-space: nowrap;
+	}
+
+	.save-summary-top {
 		display: flex;
 		align-items: center;
 		gap: 10px;
-		flex-wrap: wrap;
 	}
 
 	.save-title {
@@ -1311,9 +1326,19 @@
 	.save-actions {
 		display: flex;
 		align-items: center;
-		gap: 10px;
+		gap: 8px;
 		flex-wrap: wrap;
 		justify-content: flex-end;
+	}
+
+	/* Scoped to the bar so the same classes keep their full size in the modals.
+	   Slightly trimmed from the page default (12px 28px) so three buttons sit in
+	   a header row without dominating it, but still full-size targets. */
+	.save-bar .btn-ghost,
+	.save-bar .btn-primary,
+	.save-bar .btn-restart {
+		padding: 10px 22px;
+		font-size: 15px;
 	}
 
 	.btn-primary {

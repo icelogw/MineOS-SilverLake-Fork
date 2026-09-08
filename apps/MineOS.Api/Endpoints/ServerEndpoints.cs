@@ -803,7 +803,9 @@ public static class ServerEndpoints
         return context.Request.Headers.ContainsKey("X-Api-Key");
     }
 
-    private static async Task<int> ResolveShutdownTimeoutAsync(
+    // Internal so the plugin API applies the same operator-configured shutdown
+    // timeout as the panel does, rather than inventing a second policy.
+    internal static async Task<int> ResolveShutdownTimeoutAsync(
         ISettingsService settingsService,
         int? overrideSeconds,
         CancellationToken cancellationToken)
