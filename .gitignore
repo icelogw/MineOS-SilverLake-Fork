@@ -5,6 +5,11 @@ mineos.auth.log
 # Logs
 logs
 *.log
+# ...but not source directories that happen to be called "logs". The bare
+# pattern above matches at any depth, which silently excluded the proxy Logs
+# route: it worked locally and was missing for everyone else.
+!apps/web/src/routes/**/logs/
+!apps/web/src/routes/**/logs/**
 
 # Runtime data
 pids
