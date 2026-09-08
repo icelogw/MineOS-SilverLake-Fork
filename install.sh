@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 
-REPO_URL="https://github.com/freeman412/mineos-sveltekit.git"
+# This fork. Both were pointed at freeman412/mineos-sveltekit, so running this
+# fork's installer installed upstream's code instead of the code sitting next to
+# the script. One variable now, so retargeting is a single edit.
+MINEOS_REPO_SLUG="${MINEOS_REPO_SLUG:-icelogw/MineOS-SilverLake-Fork}"
+REPO_URL="https://github.com/${MINEOS_REPO_SLUG}.git"
 INSTALL_DIR="${MINEOS_INSTALL_DIR:-mineos}"
-REF="main"
+# "main" existed in neither this fork nor upstream, so the default clone failed
+# outright. This fork's only branch is vibing.
+REF="vibing"
 BUILD=false
 BUNDLE_URL=""
 CLI_URL=""
@@ -15,16 +21,19 @@ set -euo pipefail
 
 usage() {
     cat <<'EOF'
-MineOS installer
+MineOS installer (SilverLake fork)
 
 Usage:
-  curl -fsSL https://mineos.net/install.sh | bash
-  curl -fsSL https://mineos.net/install.sh | bash -s -- --build
-  curl -fsSL https://mineos.net/install.sh | bash -s -- --version v1.0.0
+  ./install.sh --build
+  ./install.sh --version v1.0.0
+
+Note: without --build this downloads a release bundle, so it needs a
+published release on the configured repo. This fork has none yet — use
+--build until one is tagged.
 
 Options:
   --build           Clone repo and build from source
-  --ref <ref>       Git ref for --build (default: main)
+  --ref <ref>       Git ref for --build (default: vibing)
   --dir <path>      Install directory (default: ./mineos)
   --repo <url>      Git repo for --build
   --version <tag>   Download specific release version (e.g., v1.0.0)
@@ -45,9 +54,9 @@ get_latest_bundle_url() {
     local version="${2:-}"
     local api
     if [ -n "$version" ]; then
-        api="https://api.github.com/repos/freeman412/mineos-sveltekit/releases/tags/$version"
+        api="https://api.github.com/repos/${MINEOS_REPO_SLUG}/releases/tags/$version"
     else
-        api="https://api.github.com/repos/freeman412/mineos-sveltekit/releases/latest"
+        api="https://api.github.com/repos/${MINEOS_REPO_SLUG}/releases/latest"
     fi
 
     if command_exists python3; then
@@ -89,7 +98,7 @@ PY
 }
 
 get_latest_prerelease_tag() {
-    local api="https://api.github.com/repos/freeman412/mineos-sveltekit/releases"
+    local api="https://api.github.com/repos/${MINEOS_REPO_SLUG}/releases"
 
     if command_exists python3; then
         python3 - <<'PY' "$api"

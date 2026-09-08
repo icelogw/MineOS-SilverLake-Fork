@@ -1,18 +1,30 @@
 param(
     [switch]$Build,
-    [string]$Ref = "main",
+    [string]$Ref = "vibing",
     [string]$InstallDir = "mineos",
     [string]$Version = "",
     [switch]$Preview,
     [string]$BundleUrl = "",
     [string]$CliUrl = "",
     [switch]$NoCli,
-    [string]$RepoUrl = "https://github.com/freeman412/mineos-sveltekit.git",
+    [string]$RepoSlug = "icelogw/MineOS-SilverLake-Fork",
+    [string]$RepoUrl = "",
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$ForwardArgs
 )
 
 $ErrorActionPreference = "Stop"
+
+# Derived from -RepoSlug unless the caller passed an explicit -RepoUrl, so the
+# clone URL and the releases API can never point at different repositories.
+#
+# Both were previously hardcoded to freeman412/mineos-sveltekit, which meant
+# this fork's installer installed upstream's code rather than the code sitting
+# beside the script. -Ref defaulted to "main", a branch that exists in neither
+# repository, so the clone failed outright.
+if ([string]::IsNullOrWhiteSpace($RepoUrl)) {
+    $RepoUrl = "https://github.com/$RepoSlug.git"
+}
 
 function Write-Info { Write-Host "[INFO] $($args -join ' ')" -ForegroundColor Cyan }
 function Write-Error-Custom { Write-Host "[ERR] $($args -join ' ')" -ForegroundColor Red }
@@ -35,7 +47,7 @@ function Wait-OnError {
 }
 
 function Get-LatestPrereleaseTag {
-    $api = "https://api.github.com/repos/freeman412/mineos-sveltekit/releases"
+    $api = "https://api.github.com/repos/$RepoSlug/releases"
     $releases = Invoke-RestMethod -Uri $api -UseBasicParsing
     $prerelease = $releases | Where-Object { $_.prerelease -eq $true } | Select-Object -First 1
     return $prerelease.tag_name
@@ -47,9 +59,9 @@ function Get-LatestBundleUrl {
         [string]$Version = ""
     )
     if ([string]::IsNullOrWhiteSpace($Version)) {
-        $api = "https://api.github.com/repos/freeman412/mineos-sveltekit/releases/latest"
+        $api = "https://api.github.com/repos/$RepoSlug/releases/latest"
     } else {
-        $api = "https://api.github.com/repos/freeman412/mineos-sveltekit/releases/tags/$Version"
+        $api = "https://api.github.com/repos/$RepoSlug/releases/tags/$Version"
     }
     $release = Invoke-RestMethod -Uri $api -UseBasicParsing
     $asset = $release.assets | Where-Object { $_.name -eq $AssetName } | Select-Object -First 1

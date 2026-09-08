@@ -3,7 +3,15 @@ services:
   # (uses docker-compose.host.yml).
   # MineOS API
   api:
-    image: ghcr.io/freeman412/mineos-api:${MINEOS_IMAGE_TAG:-latest}
+    # Defaults to this fork's own registry namespace, not upstream's. Pointing
+    # at ghcr.io/freeman412 meant a plain `docker compose up` in this repo
+    # silently ran upstream's application instead of this fork's.
+    #
+    # This fork publishes no images yet, so today the supported path is the
+    # build overlay:
+    #   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+    # Set MINEOS_IMAGE_REPO=ghcr.io/freeman412 to deliberately run upstream.
+    image: ${MINEOS_IMAGE_REPO:-ghcr.io/icelogw}/mineos-api:${MINEOS_IMAGE_TAG:-latest}
     container_name: mineos-api
     restart: unless-stopped
     environment:
@@ -67,7 +75,7 @@ services:
 
   # MineOS Web UI
   web:
-    image: ghcr.io/freeman412/mineos-web:${MINEOS_IMAGE_TAG:-latest}
+    image: ${MINEOS_IMAGE_REPO:-ghcr.io/icelogw}/mineos-web:${MINEOS_IMAGE_TAG:-latest}
     container_name: mineos-web
     restart: unless-stopped
     environment:
