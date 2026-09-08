@@ -20,9 +20,16 @@
 	// Keyed on server name so switching servers (this component lives in the persisted
 	// layout) reloads the port instead of showing the previous server's. The cancelled
 	// flag drops a late response from a server we've already navigated away from.
+	// Derived primitives, not `server` itself. The shell reassigns `server` on every
+	// heartbeat (a new object each time), so an effect reading the object re-ran a
+	// few times a minute and refetched the port on each one. A derived value only
+	// notifies when it actually changes, so this now runs when the server does.
+	const effectiveName = $derived(server?.name);
+	const effectiveType = $derived(server?.serverType);
+
 	$effect(() => {
-		const name = server?.name;
-		const serverType = server?.serverType;
+		const name = effectiveName;
+		const serverType = effectiveType;
 		if (!name) return;
 		let cancelled = false;
 		(async () => {

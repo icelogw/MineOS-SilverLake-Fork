@@ -102,9 +102,11 @@
 			crashTerminal = crashSetup.terminal;
 			crashFitAddon = crashSetup.fitAddon;
 
-			connectToLogs('server');
-			connectToLogs('java');
-			connectToLogs('crash');
+			// Only the visible tab. Opening all three held three of the browser's
+			// six per-origin connections for logs nobody was looking at, which
+			// together with the global streams exhausted the budget and left the
+			// whole site queueing requests forever.
+			connectToLogs(activeTab);
 
 			resizeObserver = new ResizeObserver(() => {
 				fitActiveTerminal();
@@ -200,10 +202,31 @@
 
 	function setActiveTab(tab: LogTab) {
 		if (activeTab === tab) return;
+
+		// Hand the single log connection to the tab being shown. The server sends
+		// recent history on connect, so switching back to a tab refills it rather
+		// than leaving a gap.
+		const previous = activeTab;
 		activeTab = tab;
+		disconnectFromLogs(previous);
+		connectToLogs(tab);
+
 		requestAnimationFrame(() => {
 			fitActiveTerminal();
 		});
+	}
+
+	function disconnectFromLogs(tab: LogTab) {
+		if (tab === 'java') {
+			javaEventSource?.close();
+			javaEventSource = null;
+		} else if (tab === 'crash') {
+			crashEventSource?.close();
+			crashEventSource = null;
+		} else {
+			serverEventSource?.close();
+			serverEventSource = null;
+		}
 	}
 
 	function fitActiveTerminal() {
@@ -249,6 +272,8 @@
 	}
 
 	let tpsEnabled = $state(data.server?.config?.monitoring?.tpsEnabled ?? false);
+
+	const isProxy = $derived(data.server?.serverType === 'proxy');
 
 	async function toggleTps() {
 		if (!data.server?.config) return;
@@ -334,11 +359,16 @@
 			</button>
 		</div>
 		<div class="header-actions">
-			<label class="tps-toggle-inline" title={tpsEnabled ? 'TPS monitoring on' : 'TPS monitoring off'}>
-				<span class="tps-label">TPS</span>
-				<input type="checkbox" checked={tpsEnabled} onchange={toggleTps} />
-				<span class="toggle-slider-sm"></span>
-			</label>
+			{#if !isProxy}
+				<!-- Hidden for proxies: Velocity and BungeeCord have no tick loop, and
+				     the TPS command is a game-server command they never implement. The
+				     switch offered to turn on a measurement that cannot exist. -->
+				<label class="tps-toggle-inline" title={tpsEnabled ? 'TPS monitoring on' : 'TPS monitoring off'}>
+					<span class="tps-label">TPS</span>
+					<input type="checkbox" checked={tpsEnabled} onchange={toggleTps} />
+					<span class="toggle-slider-sm"></span>
+				</label>
+			{/if}
 			<button class="clear-button" onclick={clearLogs} disabled={clearing}>
 				{clearing ? 'Clearing...' : 'Clear Logs'}
 			</button>

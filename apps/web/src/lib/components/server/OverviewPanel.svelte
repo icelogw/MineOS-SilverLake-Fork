@@ -8,6 +8,7 @@
 	import ProxyBackendRollup from '$lib/components/ProxyBackendRollup.svelte';
 	import type { ServerPanelData } from './panelData';
 	import type { loadOverview } from '$lib/loads/overview';
+	import { subscribeShared } from '$lib/utils/sharedEventStream';
 
 	type OverviewData = Awaited<ReturnType<typeof loadOverview>> & ServerPanelData;
 
@@ -92,7 +93,7 @@
 	let heartbeatError = $state<string | null>(data.heartbeat.error);
 	let watchdog = $state(data.watchdog.data ?? null);
 	let watchdogError = $state<string | null>(data.watchdog.error);
-	let heartbeatSource: EventSource | null = null;
+	let unsubscribeHeartbeat: (() => void) | null = null;
 	let heartbeatStatus = $derived((heartbeat?.status ?? '').toLowerCase());
 	let isRunning = $derived(heartbeatStatus === 'up' || heartbeatStatus === 'running');
 	let memoryHistory = $state<number[]>([]);
@@ -216,7 +217,8 @@
 			disposed = true;
 			terminal?.dispose();
 			eventSource?.close();
-			heartbeatSource?.close();
+			unsubscribeHeartbeat?.();
+			unsubscribeHeartbeat = null;
 			resizeObserver?.disconnect();
 		};
 	});
@@ -240,8 +242,8 @@
 		detectServerType(data.server);
 
 		eventSource?.close();
-		heartbeatSource?.close();
-		heartbeatSource = null;
+		unsubscribeHeartbeat?.();
+		unsubscribeHeartbeat = null;
 		terminal?.clear();
 
 		connectToHeartbeat();
@@ -357,29 +359,38 @@
 	function connectToHeartbeat() {
 		if (!data.server) return;
 
-		heartbeatSource = new EventSource(`/api/servers/${encodeURIComponent(data.server.name)}/heartbeat/stream`);
-		heartbeatSource.onmessage = (event) => {
-			try {
-				heartbeat = JSON.parse(event.data);
-				heartbeatError = null;
-				if (heartbeat?.memoryBytes != null) {
-					updateMemoryHistory(heartbeat.memoryBytes);
+		unsubscribeHeartbeat?.();
+
+		// Shares ServerShell's connection to this same URL rather than opening a
+		// second one. The shared stream already retries with backoff, so the only
+		// thing left to handle here is it giving up for good.
+		unsubscribeHeartbeat = subscribeShared<typeof heartbeat>(
+			`/api/servers/${encodeURIComponent(data.server.name)}/heartbeat/stream`,
+			{
+				onMessage: (payload) => {
+					heartbeat = payload;
+					heartbeatError = null;
+					if (heartbeat?.memoryBytes != null) {
+						updateMemoryHistory(heartbeat.memoryBytes);
+					}
+				},
+				onGiveUp: () => {
+					// A dropped stream is usually an expired session. Confirm before
+					// bouncing the operator to the login page over a blip.
+					fetch('/api/auth/me')
+						.then((res) => {
+							if (res.status === 401 || res.status === 403) {
+								window.location.href = '/login';
+							} else {
+								heartbeatError = 'Lost connection to the server status stream.';
+							}
+						})
+						.catch(() => {
+							heartbeatError = 'Lost connection to the server status stream.';
+						});
 				}
-			} catch (err) {
-				console.error('Failed to parse heartbeat:', err);
 			}
-		};
-		heartbeatSource.onerror = () => {
-			heartbeatSource?.close();
-			heartbeatSource = null;
-			fetch('/api/auth/me').then((res) => {
-				if (res.status === 401 || res.status === 403) {
-					window.location.href = '/login';
-				} else {
-					setTimeout(connectToHeartbeat, 3000);
-				}
-			}).catch(() => setTimeout(connectToHeartbeat, 3000));
-		};
+		);
 	}
 
 	async function sendCommand() {

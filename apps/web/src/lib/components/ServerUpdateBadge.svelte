@@ -12,9 +12,15 @@
 	let appliedJar = $state<string | null>(null);
 	let modeError = $state<string | null>(null);
 
+	// Only refetch when the server actually changes. Update checks can reach out
+	// to PaperMC/Mojang, so re-running this on every heartbeat meant outbound
+	// requests every few seconds for a page nobody was touching.
+	let lastFetchedName: string | null = null;
+
 	$effect(() => {
 		const name = serverName;
-		if (!name) return;
+		if (!name || name === lastFetchedName) return;
+		lastFetchedName = name;
 		appliedJar = null;
 		getServerUpdates(fetch, name).then((result) => {
 			status = result.data;

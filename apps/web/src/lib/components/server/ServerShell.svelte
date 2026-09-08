@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/stores';
-	import { createEventStream, type EventStreamHandle } from '$lib/utils/eventStream';
+	import { subscribeShared } from '$lib/utils/sharedEventStream';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import ServerQuickActions from '$lib/components/ServerQuickActions.svelte';
 	import ServerIconUploader from '$lib/components/ServerIconUploader.svelte';
@@ -134,7 +134,7 @@
 
 	const statusMeta = $derived(normalizeStatus(server?.status));
 
-	let statusStream: EventStreamHandle | null = null;
+	let unsubscribeStatus: (() => void) | null = null;
 
 	function scheduleBurstRefresh() {
 		connectStatusStream();
@@ -154,17 +154,20 @@
 		connectStatusStream(data.server?.name);
 
 		return () => {
-			statusStream?.close();
-			statusStream = null;
+			unsubscribeStatus?.();
+			unsubscribeStatus = null;
 		};
 	});
 
 	function connectStatusStream(name: string | undefined = server?.name) {
 		if (!name) return;
-		statusStream?.close();
-		// Reconnects with backoff instead of the old every-2-seconds retry loop.
-		statusStream = createEventStream<ServerHeartbeat>({
-			url: `/api/servers/${encodeURIComponent(name)}/heartbeat/stream`,
+		unsubscribeStatus?.();
+		// Shared with OverviewPanel, which wants the same heartbeat. Both used to
+		// open their own connection to this URL, burning two of the browser's six
+		// per-origin slots on identical data.
+		unsubscribeStatus = subscribeShared<ServerHeartbeat>(
+			`/api/servers/${encodeURIComponent(name)}/heartbeat/stream`,
+			{
 			onMessage: (heartbeat) => {
 				if (server) {
 					server = {
@@ -179,9 +182,9 @@
 					max: heartbeat.ping?.playersMax ?? null,
 					version: heartbeat.ping?.serverVersion ?? null
 				};
-			},
-			reconnect: {}
-		});
+			}
+			}
+		);
 	}
 </script>
 
@@ -330,12 +333,21 @@
 
 	.server-icon {
 		display: flex;
-		align-items: center;
+		align-items: stretch;
+		/* An explicit square, with the actions card beside it stretching to match
+		   (see `align-items: stretch` on .server-side). The dependency runs this
+		   way round because it cannot run the other: in a flex row an item's width
+		   is resolved before its stretched height, so `aspect-ratio` has no height
+		   to derive a square from and collapses to a sliver. Sized just past the
+		   actions card's natural height so neither box is squashed. */
+		flex: 0 0 auto;
+		width: 164px;
+		height: 164px;
 	}
 
 	.server-side {
 		display: flex;
-		align-items: center;
+		align-items: stretch;
 		gap: 18px;
 		margin-left: auto;
 		position: relative;
@@ -427,21 +439,20 @@
 		color: rgba(238, 240, 248, 0.6);
 	}
 
+	/* One full-bleed layer holding both glows, positioned within the gradients
+	   themselves. The previous version used two offset boxes sized in percentages
+	   (`inset: -20% 40% 30% -20%`), so each gradient's own edge landed inside the
+	   card: a visible vertical seam down the middle and a glow that stopped short
+	   of the bottom. Sizing the gradients instead means there are no box edges to
+	   see, at any card width. */
 	.server-header::before {
 		content: '';
 		position: absolute;
-		inset: -20% 40% 30% -20%;
-		background: radial-gradient(circle at top left, rgba(106, 176, 76, 0.18), transparent 70%);
-		opacity: 0.9;
-		z-index: 0;
-	}
-
-	.server-header::after {
-		content: '';
-		position: absolute;
-		inset: 20% -10% -30% 50%;
-		background: radial-gradient(circle at top right, rgba(96, 141, 255, 0.18), transparent 70%);
-		opacity: 0.8;
+		inset: 0;
+		background:
+			radial-gradient(60% 150% at 10% 0%, rgba(106, 176, 76, 0.18), transparent 70%),
+			radial-gradient(55% 150% at 90% 100%, rgba(96, 141, 255, 0.18), transparent 70%);
+		pointer-events: none;
 		z-index: 0;
 	}
 
