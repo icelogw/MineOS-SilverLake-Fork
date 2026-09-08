@@ -64,14 +64,19 @@ public static class PerformanceEndpoints
         {
             try
             {
+                // Up to 30 days. Nothing prunes the metrics table, so the data is
+                // there; the service buckets it down to a fixed number of points,
+                // which is what makes a long window affordable to return.
+                const int maxWindowMinutes = 43200;
+
                 var windowMinutes = minutes.GetValueOrDefault(60);
                 if (windowMinutes < 5)
                 {
                     windowMinutes = 5;
                 }
-                else if (windowMinutes > 1440)
+                else if (windowMinutes > maxWindowMinutes)
                 {
-                    windowMinutes = 1440;
+                    windowMinutes = maxWindowMinutes;
                 }
 
                 var history = await performanceService.GetHistoryAsync(

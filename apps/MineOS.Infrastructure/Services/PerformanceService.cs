@@ -65,12 +65,13 @@ public sealed class PerformanceService : IPerformanceService
     public async Task<IReadOnlyList<PerformanceSampleDto>> GetHistoryAsync(
         string serverName,
         TimeSpan window,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int maxPoints = 500)
     {
         EnsureServerExists(serverName);
         var cutoff = DateTimeOffset.UtcNow - window;
 
-        return await _db.PerformanceMetrics.AsNoTracking()
+        var samples = await _db.PerformanceMetrics.AsNoTracking()
             .Where(metric => metric.ServerName == serverName && metric.Timestamp >= cutoff)
             .OrderBy(metric => metric.Timestamp)
             .Select(metric => new PerformanceSampleDto(
@@ -83,6 +84,74 @@ public sealed class PerformanceService : IPerformanceService
                 metric.Tps,
                 metric.PlayerCount))
             .ToListAsync(cancellationToken);
+
+        return Downsample(samples, maxPoints);
+    }
+
+    /// <summary>
+    /// Averages samples into at most <paramref name="maxPoints"/> evenly sized
+    /// buckets, so a week-long window costs the same to send and draw as an hour.
+    ///
+    /// Averaged rather than thinned by taking every Nth row: dropping rows would
+    /// hide the spikes that are the entire reason to look at a performance chart.
+    /// </summary>
+    internal static IReadOnlyList<PerformanceSampleDto> Downsample(
+        IReadOnlyList<PerformanceSampleDto> samples,
+        int maxPoints)
+    {
+        if (maxPoints < 1 || samples.Count <= maxPoints)
+        {
+            return samples;
+        }
+
+        var buckets = new List<PerformanceSampleDto>(maxPoints);
+        // Ceiling division, so the last bucket is never left short of a home for
+        // the remaining samples.
+        var bucketSize = (samples.Count + maxPoints - 1) / maxPoints;
+
+        for (var start = 0; start < samples.Count; start += bucketSize)
+        {
+            var end = Math.Min(start + bucketSize, samples.Count);
+            var count = end - start;
+
+            double cpu = 0;
+            double ramUsed = 0;
+            double ramTotal = 0;
+            double tpsSum = 0;
+            var tpsCount = 0;
+            double players = 0;
+
+            for (var i = start; i < end; i++)
+            {
+                var sample = samples[i];
+                cpu += sample.CpuPercent;
+                ramUsed += sample.RamUsedMb;
+                ramTotal += sample.RamTotalMb;
+                players += sample.PlayerCount;
+
+                // TPS is nullable — a bucket of samples with no reading at all
+                // stays null rather than becoming a misleading zero.
+                if (sample.Tps.HasValue)
+                {
+                    tpsSum += sample.Tps.Value;
+                    tpsCount++;
+                }
+            }
+
+            var last = samples[end - 1];
+            buckets.Add(new PerformanceSampleDto(
+                last.ServerName,
+                // The bucket's own end, so the x-axis still lines up with wall clock.
+                last.Timestamp,
+                true,
+                cpu / count,
+                (long)Math.Round(ramUsed / count),
+                (long)Math.Round(ramTotal / count),
+                tpsCount > 0 ? tpsSum / tpsCount : null,
+                (int)Math.Round(players / count)));
+        }
+
+        return buckets;
     }
 
     public async Task RecordSampleAsync(string serverName, CancellationToken cancellationToken)
@@ -167,18 +236,27 @@ public sealed class PerformanceService : IPerformanceService
     {
         processInfo ??= _processManager.GetServerProcess(serverName);
         var hasJava = processInfo?.JavaPid != null;
+        var hasProcess = hasJava || processInfo?.ScreenPid != null;
 
         var timestamp = DateTimeOffset.UtcNow;
         var memoryTask = hasJava
             ? _monitoringService.GetMemoryInfoAsync(serverName, cancellationToken)
             : Task.FromResult(new DetailedMemoryInfoDto(0, 0, 0));
-        var pingTask = _monitoringService.GetPingInfoAsync(serverName, cancellationToken);
+
+        // Ping only a server we hold a process for — the same rule HostService
+        // applies when building the server list. Pinging a stopped server means
+        // opening a TCP connection to a port nothing is listening on and waiting
+        // out the timeout: a flat ~2s on every call, which is what made the
+        // Performance tab take two seconds to open on a stopped server.
+        var pingTask = hasProcess
+            ? _monitoringService.GetPingInfoAsync(serverName, cancellationToken)
+            : Task.FromResult<PingInfoDto?>(null);
 
         await Task.WhenAll(memoryTask, pingTask);
 
         var memory = memoryTask.Result;
         var ping = pingTask.Result;
-        var isRunning = hasJava || processInfo?.ScreenPid != null || ping != null ||
+        var isRunning = hasProcess ||
                         HasRecentLogActivity(serverName, TimeSpan.FromMinutes(2));
 
         if (!isRunning)

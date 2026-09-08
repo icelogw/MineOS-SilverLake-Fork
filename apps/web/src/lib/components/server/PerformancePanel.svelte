@@ -18,12 +18,16 @@
 
 	$effect(() => {
 		// Initialize samples from data
-		samples = data.history.data?.length ? data.history.data : data.realtime.data ? [data.realtime.data] : [];
-		sparkStatus = data.spark.data ?? null;
-		sparkError = data.spark.error ?? null;
+		samples = data.history?.data?.length
+			? data.history.data
+			: data.realtime?.data
+				? [data.realtime.data]
+				: [];
+		sparkStatus = data.spark?.data ?? null;
+		sparkError = data.spark?.error ?? null;
 	});
 
-	const latest = $derived(samples[samples.length - 1] ?? data.realtime.data ?? null);
+	const latest = $derived(samples[samples.length - 1] ?? data.realtime?.data ?? null);
 	const cpuSeries = $derived(samples.map((sample) => sample.cpuPercent));
 	const ramSeries = $derived(samples.map((sample) => sample.ramUsedMb));
 	const tpsSeries = $derived(samples.map((sample) => sample.tps ?? 0));
@@ -124,9 +128,23 @@
 			<h2>Performance</h2>
 			<p class="subtitle">Live server performance with historical context</p>
 		</div>
-		<div class="stream-status" data-status={streamStatus}>
-			<span class="dot"></span>
-			{streamStatus === 'live' ? 'Live' : streamStatus === 'connecting' ? 'Connecting' : 'Paused'}
+		<div class="header-controls">
+			<div class="ranges" role="group" aria-label="Time range">
+				{#each data.ranges ?? [] as option}
+					<a
+						class="range"
+						class:active={(data.range ?? '1h') === option.id}
+						href="?range={option.id}"
+						data-sveltekit-noscroll
+					>
+						{option.label}
+					</a>
+				{/each}
+			</div>
+			<div class="stream-status" data-status={streamStatus}>
+				<span class="dot"></span>
+				{streamStatus === 'live' ? 'Live' : streamStatus === 'connecting' ? 'Connecting' : 'Paused'}
+			</div>
 		</div>
 	</header>
 
@@ -164,17 +182,39 @@
 		<PerformanceChart title="Memory" unit="MB" color="#7fb3ff" points={ramSeries} timestamps={timestampSeries} />
 		{#if !isProxy}
 			<div class="tps-chart-wrapper">
-				<div class="tps-header">
-					<h3>TPS</h3>
-					<label class="tps-toggle" title={tpsEnabled ? 'Disable TPS monitoring' : 'Enable TPS monitoring'}>
-						<input type="checkbox" checked={tpsEnabled} onchange={toggleTps} />
-						<span class="toggle-slider"></span>
-					</label>
-				</div>
 				{#if !tpsEnabled}
-					<div class="tps-disabled-notice">TPS monitoring is disabled for this server</div>
+					<!-- The switch belongs with the thing it switches. Floating above a
+					     bare notice it read as a stray control over empty background,
+					     while every neighbouring chart was a self-contained card. -->
+					<div class="tps-card">
+						<div class="tps-header">
+							<p class="tps-title">TPS</p>
+							<label class="tps-toggle" title="Enable TPS monitoring">
+								<input type="checkbox" checked={tpsEnabled} onchange={toggleTps} />
+								<span class="toggle-slider"></span>
+							</label>
+						</div>
+						<div class="tps-disabled-notice">TPS monitoring is disabled for this server</div>
+					</div>
 				{:else}
-					<PerformanceChart title="TPS" unit="" color="#f5c97a" points={tpsSeries} timestamps={timestampSeries} maxValue={20} minValue={0} />
+					{#snippet tpsSwitch()}
+						<label class="tps-toggle" title="Disable TPS monitoring">
+							<input type="checkbox" checked={tpsEnabled} onchange={toggleTps} />
+							<span class="toggle-slider"></span>
+						</label>
+					{/snippet}
+					<!-- Rendered inside the chart card's header rather than positioned
+					     over it, where it covered the min/max readout. -->
+					<PerformanceChart
+						title="TPS"
+						unit=""
+						color="#f5c97a"
+						points={tpsSeries}
+						timestamps={timestampSeries}
+						maxValue={20}
+						minValue={0}
+						action={tpsSwitch}
+					/>
 				{/if}
 			</div>
 		{/if}
@@ -220,7 +260,7 @@
 		<p class="error-text">{sparkError}</p>
 	{/if}
 
-	{#if data.history.error}
+	{#if data.history?.error}
 		<p class="error-text">{data.history.error}</p>
 	{/if}
 </div>
@@ -238,6 +278,42 @@
 		align-items: center;
 		gap: 24px;
 		flex-wrap: wrap;
+	}
+
+	.header-controls {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		flex-wrap: wrap;
+	}
+
+	.ranges {
+		display: flex;
+		gap: 4px;
+		background: rgba(20, 24, 39, 0.6);
+		border: 1px solid rgba(42, 47, 71, 0.8);
+		border-radius: 999px;
+		padding: 3px;
+	}
+
+	.range {
+		padding: 6px 14px;
+		border-radius: 999px;
+		font-size: 13px;
+		color: #8890b1;
+		text-decoration: none;
+		white-space: nowrap;
+		transition: all 0.15s;
+	}
+
+	.range:hover {
+		color: #c9d1f2;
+	}
+
+	.range.active {
+		background: rgba(106, 176, 76, 0.15);
+		color: #7ae68d;
+		font-weight: 500;
 	}
 
 	.page-header h2 {
@@ -331,7 +407,10 @@
 
 	.charts-grid {
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+		/* Wider tracks: four charts across meant each was too narrow to read a
+		   trend in, and cramped the time axis into overlapping labels. Two up on a
+		   normal window, still collapsing to one on a narrow one. */
+		grid-template-columns: repeat(auto-fit, minmax(440px, 1fr));
 		gap: 16px;
 	}
 
@@ -340,25 +419,46 @@
 		flex-direction: column;
 	}
 
+	/* Matches PerformanceChart's own card, so a disabled TPS panel sits in the
+	   grid the same way its neighbours do instead of as a loose notice. */
+	.tps-card {
+		background: #1a1e2f;
+		border: 1px solid #2a2f47;
+		border-radius: 16px;
+		padding: 16px;
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		min-height: 300px;
+	}
+
 	.tps-header {
 		display: flex;
 		align-items: center;
+		justify-content: space-between;
 		gap: 12px;
 	}
 
-	.tps-header h3 {
+	/* Same treatment as a chart card's title. */
+	.tps-title {
 		margin: 0;
-		font-size: 14px;
-		color: #eef0f8;
+		font-size: 12px;
+		letter-spacing: 0.14em;
+		text-transform: uppercase;
+		color: #8a93ba;
 	}
 
 	.tps-disabled-notice {
-		padding: 20px;
+		flex: 1;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 		text-align: center;
 		color: #8890b1;
 		font-style: italic;
-		background: rgba(22, 27, 46, 0.5);
-		border-radius: 8px;
+		border: 1px dashed #2a2f47;
+		border-radius: 12px;
+		padding: 12px;
 	}
 
 	.tps-toggle {

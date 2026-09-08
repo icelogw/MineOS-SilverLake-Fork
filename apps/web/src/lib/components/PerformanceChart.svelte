@@ -1,4 +1,6 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
+
 	type Props = {
 		title: string;
 		unit?: string;
@@ -7,6 +9,12 @@
 		timestamps?: string[];
 		maxValue?: number;
 		minValue?: number;
+		/**
+		 * Optional control rendered in the card's own header. Lets a caller put a
+		 * switch beside the title instead of floating one over the card, where it
+		 * would sit on top of the min/max readout.
+		 */
+		action?: Snippet;
 	};
 
 	let {
@@ -16,7 +24,8 @@
 		points,
 		timestamps = [],
 		maxValue,
-		minValue
+		minValue,
+		action
 	}: Props = $props();
 
 	const normalized = $derived.by(() => {
@@ -54,14 +63,13 @@
 	const timeLabels = $derived.by(() => {
 		if (!timestamps || timestamps.length < 2) return [];
 		const count = Math.min(5, timestamps.length);
-		const labels: { label: string; position: number }[] = [];
+		const labels: { label: string }[] = [];
 		for (let i = 0; i < count; i++) {
 			const idx = Math.round((i / (count - 1)) * (timestamps.length - 1));
 			const date = new Date(timestamps[idx]);
 			if (isNaN(date.getTime())) continue;
 			labels.push({
-				label: date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-				position: (idx / (timestamps.length - 1)) * 100
+				label: date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 			});
 		}
 		return labels;
@@ -86,9 +94,14 @@
 				{/if}
 			</p>
 		</div>
-		<div class="range">
-			<span>{formatNumber(normalized.min)}</span>
-			<span>{formatNumber(normalized.max)}</span>
+		<div class="header-right">
+			<div class="range">
+				<span>{formatNumber(normalized.min)}</span>
+				<span>{formatNumber(normalized.max)}</span>
+			</div>
+			{#if action}
+				{@render action()}
+			{/if}
 		</div>
 	</header>
 
@@ -99,7 +112,7 @@
 		{#if timeLabels.length > 0}
 			<div class="time-axis">
 				{#each timeLabels as tick}
-					<span class="time-label" style={`left: ${tick.position}%`}>{tick.label}</span>
+					<span class="time-label">{tick.label}</span>
 				{/each}
 			</div>
 		{/if}
@@ -117,7 +130,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 12px;
-		min-height: 160px;
+		min-height: 300px;
 	}
 
 	header {
@@ -149,6 +162,12 @@
 		font-weight: 500;
 	}
 
+	.header-right {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+	}
+
 	.range {
 		display: flex;
 		flex-direction: column;
@@ -160,7 +179,9 @@
 
 	svg {
 		width: 100%;
-		height: 70px;
+		/* Tall enough to actually read a trend. The viewBox stretches to fill, so
+		   this is a straight trade of vertical space for detail. */
+		height: 180px;
 	}
 
 	polyline {
@@ -168,28 +189,28 @@
 		stroke-width: 2.2;
 		stroke-linecap: round;
 		stroke-linejoin: round;
+		/* The viewBox is stretched to the card with preserveAspectRatio="none", so
+		   without this the stroke is scaled unevenly too — the taller the chart,
+		   the more the line thickens vertically and thins horizontally. */
+		vector-effect: non-scaling-stroke;
 	}
 
 	.time-axis {
-		position: relative;
+		/* Evenly spaced rather than absolutely positioned. At 0/25/50/75/100% the
+		   labels overlapped each other in a narrow card and the last one hung off
+		   the right edge; the points are evenly spaced anyway after bucketing. */
+		display: flex;
+		justify-content: space-between;
+		gap: 8px;
 		height: 16px;
-		margin-top: -4px;
+		margin-top: 2px;
+		overflow: hidden;
 	}
 
 	.time-label {
-		position: absolute;
-		transform: translateX(-50%);
 		font-size: 10px;
 		color: #737aa3;
 		white-space: nowrap;
-	}
-
-	.time-label:first-child {
-		transform: translateX(0);
-	}
-
-	.time-label:last-child {
-		transform: translateX(-100%);
 	}
 
 	.placeholder {
