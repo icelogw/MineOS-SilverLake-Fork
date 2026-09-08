@@ -39,8 +39,16 @@ services:
       - MINEOS_TELEMETRY_KEY=${MINEOS_TELEMETRY_KEY:-}
       - MINEOS_SHUTDOWN_TIMEOUT=${MINEOS_SHUTDOWN_TIMEOUT:-300}
     volumes:
-      - ${HOST_BASE_DIRECTORY:-/var/games/minecraft}:/var/games/minecraft
-      - ${Data__Directory:-./data}:/app/data
+      # MINECRAFT_PATH / DATA_PATH are the documented names; the older
+      # HOST_BASE_DIRECTORY / Data__Directory still work so existing .env files
+      # keep running unchanged.
+      - ${MINECRAFT_PATH:-${HOST_BASE_DIRECTORY:-./minecraft}}:/var/games/minecraft
+      - ${DATA_PATH:-${Data__Directory:-./data}}:/app/data
+      # ASP.NET Data Protection keys. Left inside the container they are
+      # regenerated whenever it is recreated — an image update, a compose
+      # change — and anything encrypted with the previous keys can no longer be
+      # read. Persisting them keeps that data readable across restarts.
+      - mineos_dataprotection:/root/.aspnet/DataProtection-Keys
       - /var/run/docker.sock:/var/run/docker.sock  # For Docker management (optional)
     ports:
       - "${API_PORT:-5078}:5078"
@@ -89,6 +97,9 @@ services:
       - api
     ports:
       - "${WEB_PORT:-3000}:3000"
+
+volumes:
+  mineos_dataprotection:
 
 networks:
   default:

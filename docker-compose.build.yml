@@ -1,15 +1,32 @@
+# Build this fork from source instead of running the upstream images.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+#
+# The `image:` override matters. Without it Compose builds the local source and
+# then tags it with the name from docker-compose.yml —
+# ghcr.io/freeman412/mineos-api:latest — so the fork's build sits under the
+# upstream's name. Anything that pulls (a later `docker compose pull`, an
+# `--pull` flag, a fresh machine) then replaces this fork's code with upstream's
+# without a word, and `docker images` gives no way to tell which one is running.
+#
+# Tagging the fork's builds separately makes the two unmistakable, and
+# `pull_policy: build` means these services are never fetched from a registry.
 services:
   api:
+    image: mineos-silverlake-api:local
+    pull_policy: build
     build:
       context: ./apps
       dockerfile: MineOS.Api/Dockerfile
       args:
-        MINEOS_IMAGE_TAG: ${MINEOS_IMAGE_TAG:-latest}
+        MINEOS_IMAGE_TAG: ${MINEOS_IMAGE_TAG:-silverlake-local}
 
   web:
+    image: mineos-silverlake-web:local
+    pull_policy: build
     build:
       context: ./apps/web
       dockerfile: Dockerfile
       args:
-        PUBLIC_BUILD_ID: ${PUBLIC_BUILD_ID:-dev}
+        PUBLIC_BUILD_ID: ${PUBLIC_BUILD_ID:-silverlake-local}
         PUBLIC_MINECRAFT_HOST: ${PUBLIC_MINECRAFT_HOST:-}

@@ -48,6 +48,10 @@ apps/MineOS.Api/data/
 # Local Minecraft data
 /minecraft/
 
+# Compose bind mount for the API's SQLite database. Runtime state, and it holds
+# password hashes and API keys — never commit it.
+/data/
+
 # Claude settings
 .claude/settings.local.json
 .claude/settings.json
