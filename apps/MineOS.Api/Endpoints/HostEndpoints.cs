@@ -342,9 +342,14 @@ public static class HostEndpoints
                         var importService = services.GetRequiredService<IImportService>();
                         var serverService = services.GetRequiredService<IServerService>();
                         progress.Report(new JobProgressDto(resolvedJobId, "import", request.ServerName, "running", 10, "Unpacking archive", DateTimeOffset.UtcNow));
-                        await importService.CreateServerFromImportAsync(filename, request.ServerName, token);
+                        // The created server's backend name is a slug of the requested
+                        // label ("test 1" -> "test-1-a4c9"), so the verification below
+                        // must use what the import actually made. Passing the label
+                        // back in fails the job at 90% on a server that imported fine.
+                        var importedName = await importService.CreateServerFromImportAsync(
+                            filename, request.ServerName, token);
                         progress.Report(new JobProgressDto(resolvedJobId, "import", request.ServerName, "running", 90, "Finalizing", DateTimeOffset.UtcNow));
-                        await serverService.GetServerAsync(request.ServerName, token);
+                        await serverService.GetServerAsync(importedName, token);
                     });
 
                 return Results.Accepted($"/api/v1/jobs/{jobId}", new { jobId });

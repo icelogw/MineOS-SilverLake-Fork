@@ -152,14 +152,25 @@ public sealed class ImportService : IImportService
             // without this the UI could only ever show "my-import-7f3a". Any display name
             // carried inside the archive is overwritten: the importer named this copy.
             var importedConfigPath = Path.Combine(serverPath, "server.config");
-            if (File.Exists(importedConfigPath))
+
+            // Written whether or not the archive brought a server.config of its own.
+            // A plain zip of a server folder — the common case for a template — has
+            // no MineOS config in it, and skipping the write there silently dropped
+            // the label, leaving the operator staring at "hub-template-7f3a".
+            // Every other section of this file is optional and falls back to
+            // defaults, so a config carrying only [display] is as safe as none.
+            var sections = File.Exists(importedConfigPath)
+                ? IniParser.ParseWithSections(
+                    await File.ReadAllTextAsync(importedConfigPath, cancellationToken))
+                : new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+
+            sections["display"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
-                var sections = IniParser.ParseWithSections(
-                    await File.ReadAllTextAsync(importedConfigPath, cancellationToken));
-                sections["display"] = new Dictionary<string, string> { ["name"] = serverName };
-                await File.WriteAllTextAsync(
-                    importedConfigPath, IniParser.WriteWithSections(sections), cancellationToken);
-            }
+                ["name"] = serverName
+            };
+
+            await File.WriteAllTextAsync(
+                importedConfigPath, IniParser.WriteWithSections(sections), cancellationToken);
 
             OwnershipHelper.TrySetOwnership(
                 serverPath,
@@ -171,7 +182,11 @@ public sealed class ImportService : IImportService
             _logger.LogInformation(
                 "Imported server {ServerName} ({DisplayName}) from {Filename}",
                 directoryName, serverName, filename);
-            return serverPath;
+
+            // The backend name, not the path and not the requested label. Every
+            // IServerService call takes this, and returning anything else invites
+            // a caller to look up a directory that does not exist.
+            return directoryName;
         }
         catch
         {
