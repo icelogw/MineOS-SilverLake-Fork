@@ -26,6 +26,10 @@ public static class ApiEndpoints
         api.MapMetaEndpoints();
         api.MapAccountEndpoints();
 
+        // Plugin-facing API (X-Plugin-Token) and its operator-side management.
+        api.MapPluginApiEndpoints();
+        api.MapPluginTokenAdminEndpoints();
+
         // Global watchdog endpoints (not per-server)
         if (app is WebApplication webApp)
         {

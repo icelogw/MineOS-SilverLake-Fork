@@ -168,12 +168,7 @@
 	}
 </script>
 
-<div class="page-header">
-	<div>
-		<h1>Settings</h1>
-		<p class="subtitle">Configure system settings and integrations</p>
-	</div>
-</div>
+<!-- The page header now lives in +layout.svelte, shared with the other tabs. -->
 
 <!-- UI Preferences (local/browser) -->
 <div class="settings-group">

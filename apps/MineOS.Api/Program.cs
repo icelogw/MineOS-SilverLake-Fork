@@ -13,6 +13,7 @@ using HostOptions = MineOS.Application.Options.HostOptions;
 using ApiKeyOptions = MineOS.Application.Options.ApiKeyOptions;
 using JwtOptions = MineOS.Application.Options.JwtOptions;
 using CurseForgeOptions = MineOS.Application.Options.CurseForgeOptions;
+using PasswordHashingOptions = MineOS.Application.Options.PasswordHashingOptions;
 using MineOS.Infrastructure.Persistence;
 using MineOS.Infrastructure.Persistence.Repositories;
 using MineOS.Infrastructure.Services;
@@ -100,6 +101,9 @@ builder.Services.AddOptions<JwtOptions>()
         "JWT signing key must be configured. Set Auth:Jwt:SigningKey in appsettings.json or AUTH__JWT__SIGNINGKEY environment variable.")
     .ValidateOnStart();
 builder.Services.Configure<CurseForgeOptions>(builder.Configuration.GetSection("CurseForge"));
+// Argon2 work factors. Defaults are OWASP's Argon2id profile; raise them on
+// hardware that can afford it. Existing hashes keep their own parameters.
+builder.Services.Configure<PasswordHashingOptions>(builder.Configuration.GetSection("Auth:PasswordHashing"));
 
 var jwtOptions = builder.Configuration.GetSection("Auth:Jwt").Get<JwtOptions>() ?? new JwtOptions();
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -157,6 +161,7 @@ builder.Services.AddScoped<IPerformanceService, PerformanceService>();
 builder.Services.AddScoped<IFileService, FileService>();
 builder.Services.AddScoped<IImportService, ImportService>();
 builder.Services.AddScoped<IPluginService, PluginService>();
+builder.Services.AddScoped<IPluginTokenService, PluginTokenService>();
 builder.Services.AddScoped<ICurseForgeService, CurseForgeService>();
 builder.Services.AddScoped<IWorldService, WorldService>();
 builder.Services.AddScoped<IPlayerService, PlayerService>();

@@ -45,6 +45,12 @@ public sealed class AppDbContext : DbContext
     // API & Security
     public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
 
+    // Plugin-facing API: credentials issued to Minecraft plugins, and the events
+    // they report back. Kept apart from ApiKeys because a plugin token is scoped
+    // to one server, while a valid ApiKey is a full-access admin identity.
+    public DbSet<PluginToken> PluginTokens => Set<PluginToken>();
+    public DbSet<PluginEvent> PluginEvents => Set<PluginEvent>();
+
     // Mod Management
     public DbSet<InstalledModpack> InstalledModpacks => Set<InstalledModpack>();
     public DbSet<InstalledModRecord> InstalledModRecords => Set<InstalledModRecord>();
@@ -80,6 +86,32 @@ public sealed class AppDbContext : DbContext
             entity.Property(x => x.Key).IsRequired();
             entity.Property(x => x.Name).HasMaxLength(128);
             entity.Property(x => x.UserId);
+        });
+
+        modelBuilder.Entity<PluginToken>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            // Authentication is a single indexed lookup on this hash.
+            entity.HasIndex(x => x.TokenHash).IsUnique();
+            entity.HasIndex(x => x.ServerName);
+            entity.Property(x => x.TokenHash).IsRequired().HasMaxLength(64);
+            entity.Property(x => x.TokenPrefix).IsRequired().HasMaxLength(32);
+            entity.Property(x => x.Name).IsRequired().HasMaxLength(128);
+            entity.Property(x => x.ServerName).IsRequired().HasMaxLength(256);
+            entity.Property(x => x.Scopes).IsRequired().HasMaxLength(512);
+        });
+
+        modelBuilder.Entity<PluginEvent>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            // The query these rows exist to answer: what happened on this server,
+            // most recent first.
+            entity.HasIndex(x => new { x.ServerName, x.OccurredAt });
+            entity.HasIndex(x => x.TokenId);
+            entity.Property(x => x.ServerName).IsRequired().HasMaxLength(256);
+            entity.Property(x => x.Type).IsRequired().HasMaxLength(128);
+            entity.Property(x => x.PlayerUuid).HasMaxLength(36);
+            entity.Property(x => x.PlayerName).HasMaxLength(32);
         });
 
         modelBuilder.Entity<User>(entity =>

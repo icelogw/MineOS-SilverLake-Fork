@@ -457,6 +457,37 @@ public sealed class ConsoleService : IConsoleService
         }
     }
 
+    public Task<IReadOnlyList<LogEntryDto>> ReadRecentLogsAsync(
+        string serverName,
+        ConsoleLogSource source,
+        int maxLines,
+        CancellationToken cancellationToken)
+    {
+        // Bounded so a caller cannot ask the panel to read an entire log file
+        // into memory by passing a large number.
+        var lines = Math.Clamp(maxLines, 1, 500);
+
+        var path = source switch
+        {
+            ConsoleLogSource.Java => GetStartupLogPath(serverName),
+            _ => GetLogPath(serverName)
+        };
+
+        // A server that has never started has no log yet. That is an empty list,
+        // not an error the caller has to special-case.
+        if (!File.Exists(path))
+        {
+            return Task.FromResult<IReadOnlyList<LogEntryDto>>(Array.Empty<LogEntryDto>());
+        }
+
+        var timestamp = DateTimeOffset.UtcNow;
+        IReadOnlyList<LogEntryDto> entries = ReadLogTail(path, lines)
+            .Select(line => new LogEntryDto(timestamp, line))
+            .ToList();
+
+        return Task.FromResult(entries);
+    }
+
     private static IEnumerable<string> ReadLogTail(string path, int maxLines)
     {
         try
