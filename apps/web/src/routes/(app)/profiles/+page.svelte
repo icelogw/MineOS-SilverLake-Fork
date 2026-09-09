@@ -13,6 +13,23 @@
 	let groupFilter = $state('all');
 	let statusFilter = $state<'all' | 'downloaded' | 'missing'>('all');
 	let sortOption = $state<'name' | 'group' | 'version'>('name');
+	// Descending by default: landing on the newest builds is what you almost
+	// always want from a jar library.
+	let sortDirection = $state<'asc' | 'desc'>('desc');
+
+	/**
+	 * Numeric collation, so "1.9" sorts before "1.10" rather than after it.
+	 * A plain localeCompare orders these as text and puts 1.10 first, which
+	 * makes "highest version" name the wrong profile.
+	 */
+	const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+
+	/** Ascending means something different for a version than for a name. */
+	const directionLabels = $derived(
+		sortOption === 'version'
+			? { asc: 'Lowest first', desc: 'Highest first' }
+			: { asc: 'A to Z', desc: 'Z to A' }
+	);
 	let currentPage = $state(1);
 	let pageSize = $state(8);
 
@@ -33,6 +50,9 @@
 		const groupParam = $page.url.searchParams.get('group');
 		if (groupParam) {
 			groupFilter = groupParam;
+			// Select the tab that contains this group, so a deep link does not land
+			// on a page whose highlighted category disagrees with what is listed.
+			categoryFilter = categoryForGroup(groupParam);
 		}
 		loadRuns();
 		const lastRun = localStorage.getItem('mineos_buildtools_run');
@@ -46,14 +66,70 @@
 	const downloadedCount = $derived.by(() => profiles.filter((profile) => profile.downloaded).length);
 	const missingCount = $derived.by(() => profiles.length - downloadedCount);
 
-	const profileGroups = $derived.by(() => {
-		const groups = new Set<string>();
-		for (const profile of profiles) {
-			if (profile.group) {
-				groups.add(profile.group);
-			}
+	/**
+	 * Categories for the profile list, in the shape the server Config page uses
+	 * for its property sections.
+	 *
+	 * These bundle related groups rather than listing every raw one: bedrock and
+	 * its preview channel are one thing to a reader, as are the two proxies. The
+	 * flat chip row named each group separately, which meant six near-identical
+	 * buttons and no indication that any of them belonged together.
+	 */
+	const PROFILE_CATEGORIES = [
+		{ id: 'all', label: 'All', icon: '[A]', groups: null as string[] | null },
+		{ id: 'vanilla', label: 'Vanilla', icon: '[V]', groups: ['vanilla'] },
+		{ id: 'paper', label: 'Paper', icon: '[P]', groups: ['paper'] },
+		{ id: 'bedrock', label: 'Bedrock', icon: '[B]', groups: ['bedrock-server', 'bedrock-server-preview'] },
+		{ id: 'proxies', label: 'Proxies', icon: '[X]', groups: ['bungeecord', 'velocity'] },
+		{ id: 'buildtools', label: 'BuildTools', icon: '[S]', groups: ['spigot', 'craftbukkit'] }
+	];
+
+	/** Which category a group belongs to; anything unrecognised falls to "other". */
+	function categoryForGroup(group: string): string {
+		for (const category of PROFILE_CATEGORIES) {
+			if (category.groups?.includes(group)) return category.id;
 		}
-		return ['all', ...Array.from(groups).sort()];
+		return 'other';
+	}
+
+	let categoryFilter = $state('all');
+
+	/**
+	 * Which half of this page is on screen.
+	 *
+	 * The two were side by side, with BuildTools pinned to a fixed 360px column.
+	 * That cost the profile grid a third of the width for a panel that is idle
+	 * most of the time, and left a tall empty gap under it. They are separate
+	 * tasks, so they get separate views.
+	 */
+	let activeView = $state<'profiles' | 'buildtools'>('profiles');
+
+	/**
+	 * Only categories that actually have profiles, with their counts. "Other"
+	 * appears only when a group turns up that none of the categories claim — so a
+	 * server type added upstream is still reachable rather than silently
+	 * disappearing from the page.
+	 */
+	const visibleCategories = $derived.by(() => {
+		const counts = new Map<string, number>();
+		for (const profile of profiles) {
+			const id = categoryForGroup(profile.group ?? '');
+			counts.set(id, (counts.get(id) ?? 0) + 1);
+		}
+
+		const listed = PROFILE_CATEGORIES.filter(
+			(category) => category.id === 'all' || (counts.get(category.id) ?? 0) > 0
+		).map((category) => ({
+			...category,
+			count: category.id === 'all' ? profiles.length : (counts.get(category.id) ?? 0)
+		}));
+
+		const otherCount = counts.get('other') ?? 0;
+		if (otherCount > 0) {
+			listed.push({ id: 'other', label: 'Other', icon: '[?]', groups: null, count: otherCount });
+		}
+
+		return listed;
 	});
 
 	const filteredProfiles = $derived.by(() => {
@@ -64,7 +140,13 @@
 				if (!haystack.includes(query)) return false;
 			}
 
+			// An exact ?group= link still filters to that one group; the category
+			// tabs filter to a set of them.
 			if (groupFilter !== 'all' && profile.group !== groupFilter) {
+				return false;
+			}
+
+			if (categoryFilter !== 'all' && categoryForGroup(profile.group ?? '') !== categoryFilter) {
 				return false;
 			}
 
@@ -75,14 +157,21 @@
 		});
 
 		return list.sort((a, b) => {
+			let result: number;
 			switch (sortOption) {
 				case 'group':
-					return a.group.localeCompare(b.group);
+					// Within a group, fall back to version - otherwise the run of
+					// 96 vanilla profiles has no order of its own.
+					result =
+						collator.compare(a.group, b.group) || collator.compare(a.version, b.version);
+					break;
 				case 'version':
-					return a.version.localeCompare(b.version);
+					result = collator.compare(a.version, b.version);
+					break;
 				default:
-					return a.id.localeCompare(b.id);
+					result = collator.compare(a.id, b.id);
 			}
+			return sortDirection === 'desc' ? -result : result;
 		});
 	});
 
@@ -320,6 +409,7 @@
 		groupFilter;
 		statusFilter;
 		sortOption;
+		sortDirection;
 		pageSize;
 		currentPage = 1;
 	});
@@ -337,27 +427,53 @@
 	<div class="header-copy">
 		<h1>Profiles</h1>
 		<p class="subtitle">Manage Minecraft server jars and BuildTools builds.</p>
-		<div class="stat-row">
-			<div class="stat-chip">
-				<span class="stat-label">Total</span>
-				<span class="stat-value">{profiles.length}</span>
-			</div>
-			<div class="stat-chip success">
-				<span class="stat-label">Ready</span>
-				<span class="stat-value">{downloadedCount}</span>
-			</div>
-			<div class="stat-chip warning">
-				<span class="stat-label">Missing</span>
-				<span class="stat-value">{missingCount}</span>
-			</div>
-		</div>
 	</div>
-	<div class="header-actions">
-		<a class="btn-ghost" href="#buildtools">BuildTools</a>
+
+	<!-- On the header's own row rather than stacked under the subtitle: the
+	     right side was left empty when the BuildTools button became a view tab,
+	     and a third line of chips pushed the tabs further from the title. -->
+	<div class="stat-row">
+		<div class="stat-chip">
+			<span class="stat-label">Total</span>
+			<span class="stat-value">{profiles.length}</span>
+		</div>
+		<div class="stat-chip success">
+			<span class="stat-label">Ready</span>
+			<span class="stat-value">{downloadedCount}</span>
+		</div>
+		<div class="stat-chip warning">
+			<span class="stat-label">Missing</span>
+			<span class="stat-value">{missingCount}</span>
+		</div>
 	</div>
 </div>
 
+<!-- Top-level views. The old header button was an anchor jump to a panel that
+     was already on screen; these actually switch what the page is showing. -->
+<div class="view-tabs">
+	<button
+		type="button"
+		class="view-tab"
+		class:active={activeView === 'profiles'}
+		onclick={() => (activeView = 'profiles')}
+	>
+		<span class="tab-icon">[P]</span>
+		<span class="tab-label">Profiles</span>
+		<span class="tab-badge">{profiles.length}</span>
+	</button>
+	<button
+		type="button"
+		class="view-tab"
+		class:active={activeView === 'buildtools'}
+		onclick={() => (activeView = 'buildtools')}
+	>
+		<span class="tab-icon">[B]</span>
+		<span class="tab-label">BuildTools Station</span>
+	</button>
+</div>
+
 <div class="profiles-shell">
+	{#if activeView === 'profiles'}
 	<section class="library-panel">
 		<div class="library-toolbar">
 			<div class="search-field">
@@ -370,14 +486,25 @@
 				/>
 			</div>
 			<div class="toolbar-row">
-				<div class="chip-row">
-					{#each profileGroups as group}
+				<!-- Same shape as the server Config page's property sections, so the
+				     two read as the same idea. -->
+				<div class="section-tabs">
+					{#each visibleCategories as category}
 						<button
-							class="chip"
-							class:active={groupFilter === group}
-							onclick={() => (groupFilter = group)}
+							type="button"
+							class="section-tab"
+							class:active={categoryFilter === category.id}
+							onclick={() => {
+								categoryFilter = category.id;
+								// Clear any exact-group filter a ?group= link set, or the
+								// two would fight and show nothing.
+								groupFilter = 'all';
+								currentPage = 1;
+							}}
 						>
-							{group}
+							<span class="tab-icon">{category.icon}</span>
+							<span class="tab-label">{category.label}</span>
+							<span class="tab-badge">{category.count}</span>
 						</button>
 					{/each}
 				</div>
@@ -404,6 +531,13 @@
 							<option value="name">Name</option>
 							<option value="group">Group</option>
 							<option value="version">Version</option>
+						</select>
+					</label>
+					<label>
+						<span>Order</span>
+						<select bind:value={sortDirection}>
+							<option value="desc">{directionLabels.desc}</option>
+							<option value="asc">{directionLabels.asc}</option>
 						</select>
 					</label>
 					<label>
@@ -466,61 +600,71 @@
 		{:else if pagedProfiles.length > 0}
 			<div class="profiles-grid">
 				{#each pagedProfiles as profile}
+					<!-- The name gets a line to itself so it never wraps, and the
+					     badge pairs with the meta line rather than the title. Beside
+					     the title a long status label forced the name to wrap; alone
+					     on its own row it read as an orphan. Two small elements
+					     sharing one row balances instead. -->
 					<div class="profile-card">
 						<div class="card-header">
-							<div>
-								<h3>{profile.id}</h3>
+							<h3>{profile.id}</h3>
+							<div class="card-sub">
 								<p class="meta">{profile.group} {profile.version}</p>
+								<span class="badge" class:badge-ready={profile.downloaded}>
+									{profile.downloaded ? 'Ready' : 'Not downloaded'}
+								</span>
 							</div>
-							<span class="badge" class:badge-ready={profile.downloaded}>
-								{profile.downloaded ? 'Ready' : 'Not downloaded'}
-							</span>
 						</div>
-						{#if profile.filename}
-							<p class="file">{profile.filename}</p>
-						{/if}
-						<div class="card-actions">
-							{#if !profile.downloaded}
-								<button
-									class="btn-action btn-primary"
-									onclick={() => handleDownload(profile.id)}
-									disabled={actionLoading[profile.id]}
-								>
-									Download
-								</button>
-							{:else}
-								<div class="copy-group">
-									<select
-										value={copyTargets[profile.id] ?? ''}
-										onchange={(event) => {
-											const value = (event.currentTarget as HTMLSelectElement).value;
-											copyTargets[profile.id] = value;
-											copyTargets = { ...copyTargets };
-										}}
-									>
-										<option value="">Select server</option>
-										{#each servers as server}
-											<option value={server.name}>{server.name}</option>
-										{/each}
-									</select>
+						<!-- Filename and actions are one block, pinned together to the
+						     bottom of the card. Separately, the actions took the slack
+						     and left the filename floating in the middle. -->
+						<div class="card-footer">
+							{#if profile.filename}
+								<p class="file">{profile.filename}</p>
+							{/if}
+							<div class="card-actions">
+								{#if !profile.downloaded}
 									<button
-										class="btn-action"
-										onclick={() => handleCopy(profile.id)}
-										disabled={actionLoading[profile.id] || !copyTargets[profile.id]}
+										class="btn-action btn-primary"
+										onclick={() => handleDownload(profile.id)}
+										disabled={actionLoading[profile.id]}
 									>
-										Copy to server
+										Download
 									</button>
-								</div>
-							{/if}
-							{#if profile.type === 'buildtools'}
-								<button
-									class="btn-action btn-danger"
-									onclick={() => handleDelete(profile.id)}
-									disabled={actionLoading[profile.id]}
-								>
-									Delete
-								</button>
-							{/if}
+								{:else}
+									<div class="copy-group">
+										<select
+											value={copyTargets[profile.id] ?? ''}
+											onchange={(event) => {
+												const value = (event.currentTarget as HTMLSelectElement).value;
+												copyTargets[profile.id] = value;
+												copyTargets = { ...copyTargets };
+											}}
+										>
+											<option value="">Select server</option>
+											{#each servers as server}
+												<option value={server.name}>{server.name}</option>
+											{/each}
+										</select>
+										<button
+											class="btn-action"
+											onclick={() => handleCopy(profile.id)}
+											disabled={actionLoading[profile.id] || !copyTargets[profile.id]}
+										>
+											Copy to server
+										</button>
+									</div>
+								{/if}
+								{#if profile.type === 'buildtools'}
+									<button
+										class="btn-action btn-danger"
+										onclick={() => handleDelete(profile.id)}
+										disabled={actionLoading[profile.id]}
+									>
+										Delete
+									</button>
+								{/if}
+							</div>
 						</div>
 					</div>
 				{/each}
@@ -532,7 +676,9 @@
 			</div>
 		{/if}
 	</section>
+	{/if}
 
+	{#if activeView === 'buildtools'}
 	<aside class="buildtools-panel" id="buildtools">
 		<div class="buildtools-header">
 			<div>
@@ -652,13 +798,16 @@
 			</div>
 		</div>
 	</aside>
+	{/if}
 </div>
 
 <style>
 	.page-header {
 		display: flex;
 		justify-content: space-between;
-		align-items: flex-start;
+		/* Centred, not flex-start: the chips are one short row against a
+		   two-line title block, so top-aligning them left them floating. */
+		align-items: center;
 		margin-bottom: 28px;
 		gap: 20px;
 	}
@@ -670,20 +819,20 @@
 	}
 
 	.subtitle {
-		margin: 0 0 16px;
+		/* No bottom margin any more: the stat row it used to clear has moved
+		   out of the copy block and onto the header's own row. */
+		margin: 0;
 		color: #aab2d3;
 		font-size: 15px;
-	}
-
-	.header-actions {
-		display: flex;
-		gap: 12px;
 	}
 
 	.stat-row {
 		display: flex;
 		flex-wrap: wrap;
+		justify-content: flex-end;
 		gap: 10px;
+		/* Never squeezed by a long title; wraps within itself instead. */
+		flex-shrink: 0;
 	}
 
 	.stat-chip {
@@ -736,11 +885,49 @@
 		gap: 8px;
 	}
 
+	/* One view at a time, full width. Previously a fixed 360px sidebar sat beside
+	   the grid whether or not anyone was compiling, which squeezed the profile
+	   cards into two columns and left a tall gap under the console. */
 	.profiles-shell {
 		display: grid;
-		grid-template-columns: minmax(0, 1fr) 360px;
+		grid-template-columns: minmax(0, 1fr);
 		gap: 24px;
 		align-items: start;
+	}
+
+	/* Tabs for the page's two views, a step above the category tabs inside the
+	   library so the hierarchy is obvious. */
+	.view-tabs {
+		display: flex;
+		gap: 8px;
+		margin-bottom: 20px;
+		border-bottom: 1px solid #2a2f47;
+	}
+
+	.view-tab {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 12px 20px;
+		background: transparent;
+		border: none;
+		border-bottom: 2px solid transparent;
+		color: #8890b1;
+		font-family: inherit;
+		font-size: 15px;
+		font-weight: 500;
+		white-space: nowrap;
+		cursor: pointer;
+		transition: color 0.15s, border-color 0.15s;
+	}
+
+	.view-tab:hover {
+		color: #c9d1f2;
+	}
+
+	.view-tab.active {
+		color: var(--mc-grass, #6ab04c);
+		border-bottom-color: var(--mc-grass, #6ab04c);
 	}
 
 	.library-panel,
@@ -827,27 +1014,61 @@
 		font-size: 14px;
 	}
 
-	.chip-row {
+	/* Category tabs, matching the server Config page's section tabs so the two
+	   pages present grouping the same way. */
+	.section-tabs {
 		display: flex;
-		flex-wrap: wrap;
 		gap: 8px;
-	}
-
-	.chip {
+		padding: 4px;
 		background: #141827;
-		border: 1px solid #2a2f47;
-		color: #9aa2c5;
-		padding: 6px 12px;
-		border-radius: 999px;
-		font-size: 12px;
-		cursor: pointer;
-		transition: all 0.2s;
+		border-radius: 12px;
+		overflow-x: auto;
+		-webkit-overflow-scrolling: touch;
+		scroll-snap-type: x proximity;
 	}
 
-	.chip.active {
-		background: rgba(106, 176, 76, 0.2);
-		border-color: rgba(106, 176, 76, 0.45);
-		color: #b7f5a2;
+	.section-tab {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 10px 16px;
+		background: transparent;
+		border: none;
+		border-radius: 8px;
+		color: #9aa2c5;
+		font-family: inherit;
+		font-size: 14px;
+		font-weight: 500;
+		white-space: nowrap;
+		cursor: pointer;
+		scroll-snap-align: start;
+		transition: background 0.15s, color 0.15s;
+	}
+
+	.section-tab:hover {
+		color: #eef0f8;
+	}
+
+	.section-tab.active {
+		background: linear-gradient(135deg, #5865f2 0%, #4752c4 100%);
+		color: white;
+		box-shadow: 0 4px 12px rgba(88, 101, 242, 0.3);
+	}
+
+	.tab-icon {
+		font-size: 14px;
+		opacity: 0.9;
+	}
+
+	.tab-badge {
+		background: rgba(255, 255, 255, 0.12);
+		padding: 2px 8px;
+		border-radius: 10px;
+		font-size: 12px;
+	}
+
+	.section-tab.active .tab-badge {
+		background: rgba(255, 255, 255, 0.25);
 	}
 
 	.toggle-group {
@@ -977,40 +1198,85 @@
 	.profile-card {
 		background: #141827;
 		border-radius: 16px;
-		padding: 18px;
+		padding: 22px;
 		display: flex;
 		flex-direction: column;
-		gap: 12px;
+		gap: 14px;
 		border: 1px solid rgba(42, 47, 71, 0.8);
 		box-shadow: inset 0 0 0 1px rgba(106, 176, 76, 0.05);
 	}
 
 	.card-header {
 		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		gap: 12px;
+		flex-direction: column;
+		gap: 6px;
 	}
 
 	.card-header h3 {
 		margin: 0;
-		font-size: 18px;
+		font-size: 19px;
+		line-height: 1.3;
+		/* A profile name is one long hyphenated token with no natural break
+		   point, so cap it to the card rather than let it push the column. */
+		overflow-wrap: anywhere;
+	}
+
+	/* The meta line and the status badge share a row: both are small, and
+	   pairing them keeps the card to four bands instead of five. */
+	.card-sub {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 10px;
 	}
 
 	.meta {
-		margin: 4px 0 0;
+		margin: 0;
 		font-size: 12px;
 		color: #9aa2c5;
+	}
+
+	/* Filename and actions travel together at the bottom of the card. */
+	.card-footer {
+		display: flex;
+		flex-direction: column;
+		/* The slack in a stretched grid card collects above this block rather
+		   than between the filename and the button. */
+		margin-top: auto;
 	}
 
 	.file {
 		margin: 0;
 		font-size: 12px;
 		color: #c9d1d9;
-		background: rgba(20, 24, 39, 0.8);
-		border-radius: 8px;
-		padding: 8px 10px;
-		border: 1px solid rgba(42, 47, 71, 0.8);
+		/* Recessed rather than outlined: with a border it read as a disabled
+		   text input sitting in the middle of the card. */
+		background: rgba(10, 13, 22, 0.55);
+		/* Square along the bottom so it seats directly on the controls below
+		   and the two read as one block. */
+		border-radius: 8px 8px 0 0;
+		padding: 9px 11px;
+		font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	/* Only when a filename is actually rendered above them - the adjacent
+	   sibling selector means a card without one keeps fully rounded controls. */
+	.file + .card-actions > .btn-action {
+		border-top-left-radius: 0;
+		border-top-right-radius: 0;
+	}
+
+	/* The select and its button seat under the filename as a single bar, so
+	   only the two outer bottom corners stay rounded. */
+	.file + .card-actions .copy-group select {
+		border-radius: 0 0 0 8px;
+	}
+
+	.file + .card-actions .copy-group .btn-action {
+		border-radius: 0 0 8px 0;
 	}
 
 	.badge {
@@ -1019,6 +1285,9 @@
 		font-size: 12px;
 		background: rgba(255, 159, 159, 0.15);
 		color: #ff9f9f;
+		/* Never broken across two lines, and never squeezed by the meta text. */
+		white-space: nowrap;
+		flex-shrink: 0;
 	}
 
 	.badge-ready {
@@ -1030,19 +1299,47 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 8px;
-		align-items: center;
+		/* stretch, not center: the button has no border and 1px less padding
+		   than the select, so centring left it visibly shorter with slivers of
+		   card showing above and below it. */
+		align-items: stretch;
+		/* Grid cards already stretch to a shared row height, which left a gap
+		   under the button on the shorter ones. Pinning the actions to the
+		   bottom puts that slack above them, so buttons line up across a row. */
+		margin-top: auto;
 	}
 
+	/* Scoped to the card - .btn-primary is shared with the BuildTools form's
+	   submit button, which should stay its natural width. A lone Download
+	   button looked stranded in the corner of a card this wide. */
+	.card-actions .btn-primary {
+		flex: 1;
+	}
+
+	/* No gap and no wrapping: the two controls butt together into one bar,
+	   the same shape the lone Download button makes on an undownloaded card.
+	   The select's darker background is what marks the seam, so neither needs
+	   a divider. */
 	.copy-group {
 		display: flex;
-		gap: 8px;
+		gap: 0;
 		flex: 1;
-		flex-wrap: wrap;
+		flex-wrap: nowrap;
 	}
 
 	.copy-group select {
 		flex: 1;
-		min-width: 140px;
+		/* 0, not a floor of 140px: on the narrowest cards that floor pushed
+		   the button past the card edge. */
+		min-width: 0;
+		border-top-right-radius: 0;
+		border-bottom-right-radius: 0;
+	}
+
+	.copy-group .btn-action {
+		border-top-left-radius: 0;
+		border-bottom-left-radius: 0;
+		white-space: nowrap;
 	}
 
 	.btn-action {
@@ -1050,7 +1347,7 @@
 		color: #d4d9f1;
 		border: none;
 		border-radius: 6px;
-		padding: 8px 12px;
+		padding: 9px 14px;
 		font-size: 13px;
 		cursor: pointer;
 	}
@@ -1079,8 +1376,8 @@
 		flex-direction: column;
 		gap: 16px;
 		background: linear-gradient(160deg, rgba(20, 24, 39, 0.95), rgba(18, 21, 33, 0.95));
-		position: sticky;
-		top: 24px;
+		/* No longer sticky: it is the whole view now, not a companion column
+		   that had to stay in sight while the profile list scrolled past it. */
 	}
 
 	.buildtools-header {
@@ -1273,6 +1570,12 @@
 		.page-header {
 			flex-direction: column;
 			align-items: flex-start;
+		}
+
+		/* Stacked under the title again at this width, so the chips line up
+		   with it rather than hugging the right edge. */
+		.stat-row {
+			justify-content: flex-start;
 		}
 
 		.toolbar-row.split {
