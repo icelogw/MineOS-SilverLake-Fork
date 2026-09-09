@@ -694,8 +694,9 @@
 	<div class="empty-state">
 		<p class="empty-icon">[]</p>
 		<h2>No game servers yet</h2>
+		<!-- No button here: the page header's "+ Create Server" is always on
+		     screen right above this, so a second one only duplicated it. -->
 		<p>Create your first Minecraft server to get started</p>
-		<a href="/servers/new" class="btn-primary">Create Server</a>
 	</div>
 {/if}
 
@@ -1357,6 +1358,12 @@
 
 	.empty-state p {
 		margin: 0 0 24px;
+	}
+
+	/* That 24px was clearing the button underneath. With nothing below it the
+	   last line would sit on a lopsided 104px of bottom padding. */
+	.empty-state p:last-child {
+		margin-bottom: 0;
 	}
 
 	@media (max-width: 640px) {
