@@ -1,0 +1,46 @@
+name: Upstream-safe check
+
+# Guards branches intended for an upstream pull request.
+#
+# A pull request opened against freeman412/mineos-sveltekit runs in *that*
+# repository's CI, so nothing here can block it. What this does instead is fail
+# the branch you would raise it from, before you open it: push a pr/* branch and
+# this reports whether it carries anything that belongs only to this fork.
+#
+# Name PR branches pr/<topic> and this runs on its own.
+on:
+  push:
+    branches:
+      - 'pr/**'
+      - 'upstream/**'
+  pull_request:
+    branches:
+      - 'pr/**'
+  workflow_dispatch:
+    inputs:
+      base:
+        description: 'Base ref to compare against'
+        required: false
+        default: 'upstream/vibing'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The check diffs against upstream, so it needs real history rather
+          # than the single commit a shallow clone provides.
+          fetch-depth: 0
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/freeman412/mineos-sveltekit.git || true
+          git fetch upstream --quiet
+
+      - name: Check for fork-only changes
+        shell: pwsh
+        run: |
+          $base = '${{ github.event.inputs.base }}'
+          if ([string]::IsNullOrWhiteSpace($base)) { $base = 'upstream/vibing' }
+          ./scripts/check-upstream-safe.ps1 -Base $base

@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+#
+# Refuses to push a branch named pr/* if it carries fork-only changes.
+#
+# The Actions workflow reports the same thing, but only after the push. This
+# stops it at the machine, which is the closest thing to "it cannot be sent" —
+# a pull request opened against upstream runs in upstream's CI, so nothing in
+# this repository can block that step itself.
+#
+# Enable with:
+#   git config core.hooksPath scripts/hooks
+#
+# Bypass deliberately with:
+#   git push --no-verify
+
+set -u
+
+branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
+
+case "$branch" in
+	pr/*|upstream/*) ;;
+	*) exit 0 ;;   # Not a branch meant for upstream; nothing to check.
+esac
+
+base="${UPSTREAM_BASE:-upstream/vibing}"
+
+if ! git rev-parse --verify --quiet "$base" >/dev/null 2>&1; then
+	echo "[pre-push] '$base' not found - run: git fetch upstream" >&2
+	echo "[pre-push] skipping the upstream-safe check." >&2
+	exit 0
+fi
+
+# pwsh on Linux/macOS, powershell on Windows. Either runs the same script.
+if command -v pwsh >/dev/null 2>&1; then
+	shell_cmd=pwsh
+elif command -v powershell >/dev/null 2>&1; then
+	shell_cmd=powershell
+else
+	echo "[pre-push] no PowerShell found; skipping the upstream-safe check." >&2
+	exit 0
+fi
+
+echo "[pre-push] '$branch' targets upstream - checking for fork-only changes..."
+
+if "$shell_cmd" -NoProfile -ExecutionPolicy Bypass -File "scripts/check-upstream-safe.ps1" -Base "$base"; then
+	exit 0
+fi
+
+echo "" >&2
+echo "[pre-push] push refused: this branch carries changes that belong only to this fork." >&2
+echo "[pre-push] Rebuild it from $base with only the portable commits, or push with --no-verify" >&2
+echo "[pre-push] if you know this branch is not for an upstream pull request." >&2
+exit 1
