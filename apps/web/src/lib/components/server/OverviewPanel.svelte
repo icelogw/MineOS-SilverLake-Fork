@@ -9,6 +9,7 @@
 	import type { ServerPanelData } from './panelData';
 	import type { loadOverview } from '$lib/loads/overview';
 	import { subscribeShared } from '$lib/utils/sharedEventStream';
+	import { probeAuth } from '$lib/utils/authProbe';
 
 	type OverviewData = Awaited<ReturnType<typeof loadOverview>> & ServerPanelData;
 
@@ -94,6 +95,11 @@
 	let watchdog = $state(data.watchdog.data ?? null);
 	let watchdogError = $state<string | null>(data.watchdog.error);
 	let unsubscribeHeartbeat: (() => void) | null = null;
+
+	// Component scope, not onMount's: the stream error handlers below live outside
+	// onMount and need to know the panel is going away, so they do not fire
+	// requests that outlive it.
+	let disposed = false;
 	let heartbeatStatus = $derived((heartbeat?.status ?? '').toLowerCase());
 	let isRunning = $derived(heartbeatStatus === 'up' || heartbeatStatus === 'running');
 	let memoryHistory = $state<number[]>([]);
@@ -157,8 +163,6 @@
 
 	onMount(() => {
 		if (!data.server) return;
-
-		let disposed = false;
 
 		const initTerminal = async () => {
 			const xtermModule = resolveModule(await import('@xterm/xterm'));
@@ -341,15 +345,19 @@
 
 		eventSource.onerror = () => {
 			eventSource?.close();
-			// Check if this is an auth issue before reconnecting
-			fetch('/api/auth/me').then((res) => {
-				if (res.status === 401 || res.status === 403) {
+
+			// Navigating away closes this stream, which lands here. Probing then is
+			// pointless — the page is going — and the probe would outlive the page
+			// holding a connection the next page needs.
+			if (disposed) return;
+
+			// Check if this is an auth issue before reconnecting.
+			probeAuth().then((result) => {
+				if (disposed) return;
+				if (result === 'unauthenticated') {
 					window.location.href = '/login';
-				} else {
-					terminal?.writeln('\x1b[31mConnection lost. Reconnecting...\x1b[0m');
-					setTimeout(connectToLogs, 3000);
+					return;
 				}
-			}).catch(() => {
 				terminal?.writeln('\x1b[31mConnection lost. Reconnecting...\x1b[0m');
 				setTimeout(connectToLogs, 3000);
 			});
@@ -375,19 +383,18 @@
 					}
 				},
 				onGiveUp: () => {
+					if (disposed) return;
+
 					// A dropped stream is usually an expired session. Confirm before
 					// bouncing the operator to the login page over a blip.
-					fetch('/api/auth/me')
-						.then((res) => {
-							if (res.status === 401 || res.status === 403) {
-								window.location.href = '/login';
-							} else {
-								heartbeatError = 'Lost connection to the server status stream.';
-							}
-						})
-						.catch(() => {
-							heartbeatError = 'Lost connection to the server status stream.';
-						});
+					probeAuth().then((result) => {
+						if (disposed) return;
+						if (result === 'unauthenticated') {
+							window.location.href = '/login';
+							return;
+						}
+						heartbeatError = 'Lost connection to the server status stream.';
+					});
 				}
 			}
 		);

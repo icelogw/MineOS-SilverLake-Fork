@@ -2,6 +2,7 @@
 	import type { SystemNotification, JobStatus, ModpackInstallProgress, ForgeInstallStatus } from '$lib/api/types';
 	import { onMount } from 'svelte';
 	import { uploads, type UploadEntry } from '$lib/stores/uploads';
+	import { probeAuth } from '$lib/utils/authProbe';
 	import ProgressBar from './ProgressBar.svelte';
 
 	let notifications = $state<SystemNotification[]>([]);
@@ -56,13 +57,13 @@
 		};
 		notificationsSource.onerror = () => {
 			notificationsSource?.close();
-			fetch('/api/auth/me').then((res) => {
-				if (res.status === 401 || res.status === 403) {
+			probeAuth().then((result) => {
+				if (result === 'unauthenticated') {
 					window.location.href = '/login';
-				} else {
-					setTimeout(connectNotificationStream, 5000);
+					return;
 				}
-			}).catch(() => setTimeout(connectNotificationStream, 5000));
+				setTimeout(connectNotificationStream, 5000);
+			});
 		};
 	}
 
@@ -84,13 +85,13 @@
 		};
 		jobsSource.onerror = () => {
 			jobsSource?.close();
-			fetch('/api/auth/me').then((res) => {
-				if (res.status === 401 || res.status === 403) {
+			probeAuth().then((result) => {
+				if (result === 'unauthenticated') {
 					window.location.href = '/login';
-				} else {
-					setTimeout(connectJobsStream, 5000);
+					return;
 				}
-			}).catch(() => setTimeout(connectJobsStream, 5000));
+				setTimeout(connectJobsStream, 5000);
+			});
 		};
 	}
 
