@@ -11,11 +11,14 @@
 		user,
 		servers = [],
 		profiles = [],
+		version = null,
 		onToggleSidebar
 	}: {
 		user: { username: string; role: string } | null;
 		servers: ServerSummary[] | ServerDetail[];
 		profiles: Profile[];
+		/** Build version, resolved once in the layout load. */
+		version?: string | null;
 		onToggleSidebar?: () => void;
 	} = $props();
 
@@ -28,7 +31,6 @@
 	let recentServerNames = $state<string[]>([]);
 	let recentProfileIds = $state<string[]>([]);
 	let actionBusy = $state<string | null>(null);
-	let mineosVersion = $state<string | null>(null);
 	let searchPlaceholder = $state('Search servers, profiles...');
 
 	const minQueryLength = 2;
@@ -61,11 +63,6 @@
 		recentQueries = loadRecent(recentQueryKey);
 		recentServerNames = loadRecent(recentServerKey);
 		recentProfileIds = loadRecent(recentProfileKey);
-
-		void (async () => {
-			const res = await api.getMeta(fetch);
-			if (res.data?.version) mineosVersion = res.data.version;
-		})();
 
 		const narrowQuery = window.matchMedia('(max-width: 480px)');
 		const updatePlaceholder = () => {
@@ -513,8 +510,8 @@
 	</div>
 
 	<div class="topbar-actions">
-		{#if mineosVersion}
-			<span class="version-pill" title={`MineOS ${mineosVersion}`}>{mineosVersion}</span>
+		{#if version}
+			<span class="version-pill" title={`MineOS ${version}`}>{version}</span>
 		{/if}
 		<NotificationMenu />
 		<NetherPortalButton />

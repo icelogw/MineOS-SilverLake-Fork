@@ -121,6 +121,26 @@
 					<p class="logo-tagline">Minecraft Control</p>
 				</div>
 			</a>
+
+			<!-- Outside the logo's anchor on purpose: an <a> inside an <a> is invalid
+			     HTML and browsers break both links when you nest them. -->
+			<a
+				class="fork-tag"
+				href="https://github.com/icelogw/MineOS-SilverLake-Fork"
+				target="_blank"
+				rel="noopener noreferrer"
+				title={data.version
+					? `SilverLake-Fork ${data.version} — open this fork on GitHub`
+					: 'This is a fork of MineOS — open it on GitHub'}
+			>
+				SilverLake-Fork
+				<!-- Only when the API actually reported one: an unversioned build
+				     should read as plain "SilverLake-Fork", not "SilverLake-Fork
+				     unknown". The tag already carries its own "v". -->
+				{#if data.version}
+					<span class="fork-version">{data.version}</span>
+				{/if}
+			</a>
 		</div>
 
 		<ul class="nav-list">
@@ -158,7 +178,13 @@
 	</nav>
 
 	<div class="main-wrapper">
-		<TopBar user={data.user} servers={data.servers} profiles={data.profiles} onToggleSidebar={toggleSidebar} />
+		<TopBar
+			user={data.user}
+			servers={data.servers}
+			profiles={data.profiles}
+			version={data.version}
+			onToggleSidebar={toggleSidebar}
+		/>
 		<main class="main-content">
 			{@render children()}
 		</main>
@@ -554,6 +580,46 @@
 		color: #7c87b2;
 		letter-spacing: 0.04em;
 		text-transform: uppercase;
+	}
+
+	/* Marks this as the fork rather than upstream MineOS, and links to it.
+	   Red so it reads as "not the original" at a glance, and deliberately not
+	   themed like .beta-tag below — this should stay recognisable whichever
+	   theme is active. */
+	/* A full-width strip rather than a pill. As a pill it sat outside the logo's
+	   rounded box and read as something dropped there by accident; spanning the
+	   sidebar makes it look deliberate, like a build banner. */
+	.fork-tag {
+		display: block;
+		margin: 14px -20px -24px;
+		padding: 6px 20px;
+		background: rgba(239, 68, 68, 0.14);
+		border-top: 1px solid rgba(239, 68, 68, 0.35);
+		color: #fca5a5;
+		font-size: 10px;
+		font-weight: 700;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		text-align: center;
+		text-decoration: none;
+		white-space: nowrap;
+		transition:
+			background 0.15s,
+			color 0.15s;
+	}
+
+	.fork-tag:hover {
+		background: rgba(239, 68, 68, 0.26);
+		color: #fecaca;
+	}
+
+	/* Dimmer than the fork name so the strip still reads as one label with the
+	   version trailing it, rather than two competing pieces of text. */
+	.fork-version {
+		margin-left: 6px;
+		opacity: 0.75;
+		font-weight: 600;
+		letter-spacing: 0.04em;
 	}
 
 	.beta-tag {

@@ -31,15 +31,19 @@ export const load: LayoutServerLoad = async ({ cookies, fetch, url }) => {
 		console.info('[layout] buildtools load', url.pathname, url.search);
 	}
 
-	// Load servers and profiles for search
-	const [servers, profiles] = await Promise.all([
+	// Load servers and profiles for search, plus the build version the sidebar
+	// and top bar both show. Joining the existing Promise.all costs no extra
+	// round trip, and it replaces the client-side fetch TopBar used to make.
+	const [servers, profiles, meta] = await Promise.all([
 		api.getAllServers(fetch),
-		api.getHostProfiles(fetch)
+		api.getHostProfiles(fetch),
+		api.getMeta(fetch)
 	]);
 
 	return {
 		user,
 		servers: servers.data ?? [],
-		profiles: profiles.data ?? []
+		profiles: profiles.data ?? [],
+		version: meta.data?.version ?? null
 	};
 };

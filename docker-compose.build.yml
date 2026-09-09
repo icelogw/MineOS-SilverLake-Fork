@@ -19,7 +19,9 @@ services:
       context: ./apps
       dockerfile: MineOS.Api/Dockerfile
       args:
-        MINEOS_IMAGE_TAG: ${MINEOS_IMAGE_TAG:-silverlake-local}
+        # Shown as the build version in the UI, so keep it short: the sidebar
+        # already says "SilverLake-Fork" right before it.
+        MINEOS_IMAGE_TAG: ${MINEOS_IMAGE_TAG:-local}
 
   web:
     image: mineos-silverlake-web:local
@@ -28,5 +30,5 @@ services:
       context: ./apps/web
       dockerfile: Dockerfile
       args:
-        PUBLIC_BUILD_ID: ${PUBLIC_BUILD_ID:-silverlake-local}
+        PUBLIC_BUILD_ID: ${PUBLIC_BUILD_ID:-local}
         PUBLIC_MINECRAFT_HOST: ${PUBLIC_MINECRAFT_HOST:-}
