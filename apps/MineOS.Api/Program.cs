@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Data.Sqlite;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http.Features;
@@ -182,6 +182,9 @@ builder.Services.AddSingleton<BackgroundJobService>();
 builder.Services.AddSingleton<IBackgroundJobService>(sp => sp.GetRequiredService<BackgroundJobService>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<BackgroundJobService>());
 builder.Services.AddHostedService<PerformanceCollectorService>();
+// Keeps the profile list warm so the first request after startup does not pay
+// for building it (Mojang, PaperMC, Spigot, Microsoft).
+builder.Services.AddHostedService<ProfileCacheWarmupService>();
 builder.Services.AddHostedService<LanBroadcastService>();
 builder.Services.AddHostedService<StartupServerService>();
 builder.Services.AddSingleton<TelemetryReporterService>();
